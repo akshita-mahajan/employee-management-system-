@@ -7,6 +7,8 @@ const envPath = path.join(__dirname, "../../.env");
 dotenv.config({ path: envPath });
 console.log(`[DB Pool Setup] Parameters: Host=${process.env.DB_HOST}, Port=${process.env.DB_PORT}, DB=${process.env.DB_NAME}, User=${process.env.DB_USER}, PwdLength=${process.env.DB_PASSWORD ? process.env.DB_PASSWORD.length : 0}`);
 
+const isProduction = process.env.NODE_ENV === "production" || (process.env.DB_HOST && !process.env.DB_HOST.includes("localhost"));
+
 const pool = new Pool({
   host: process.env.DB_HOST || "localhost",
   port: parseInt(process.env.DB_PORT || "5432"),
@@ -16,6 +18,7 @@ const pool = new Pool({
   max: 20, // max connections in pool
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
+  ssl: isProduction ? { rejectUnauthorized: false } : undefined,
 });
 
 export const query = async (text: string, params?: any[]) => {

@@ -15,11 +15,13 @@ export interface ReportRecord {
 interface ReportsTableProps {
   records: ReportRecord[];
   onDownload: (record: ReportRecord) => void;
+  loading?: boolean;
 }
 
 export const ReportsTable: React.FC<ReportsTableProps> = ({
   records,
   onDownload,
+  loading = false,
 }) => {
   const columns: ColumnsType<ReportRecord> = [
     { title: "Report Name", dataIndex: "name", key: "name", render: (text) => <span style={{ fontWeight: 600 }}>{text}</span> },
@@ -52,6 +54,7 @@ export const ReportsTable: React.FC<ReportsTableProps> = ({
 
   return (
     <Table
+      loading={loading}
       columns={columns}
       dataSource={records}
       rowKey="id"

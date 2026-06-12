@@ -1,20 +1,28 @@
 import React, { useState } from "react";
-import { Table, Button, Row, Col, Space, Radio, notification } from "antd";
-import { PlusOutlined, UnorderedListOutlined, AppstoreOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Table, Button, Row, Col, Space, Radio, notification, Popconfirm, Tooltip } from "antd";
+import { PlusOutlined, UnorderedListOutlined, AppstoreOutlined, EditOutlined, DeleteOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 
 import { DepartmentStats } from "../../components/departments/DepartmentStats";
 import { DepartmentCard } from "../../components/departments/DepartmentCard";
 import { DepartmentFormModal } from "../../components/departments/DepartmentFormModal";
-import { useDepartments, useCreateDepartment } from "../../hooks/useHRMS";
+import { 
+  useDepartments, 
+  useCreateDepartment, 
+  useUpdateDepartment, 
+  useDeleteDepartment,
+  useEmployees 
+} from "../../hooks/useHRMS";
 
 interface Department {
   id: string;
   name: string;
   code: string;
   head: string;
+  manager_id: string | null;
   employeeCount: number;
   budget: string;
+  description?: string;
 }
 
 const DepartmentPage: React.FC = () => {
@@ -22,46 +30,67 @@ const DepartmentPage: React.FC = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingDept, setEditingDept] = useState<Department | null>(null);
 
-  const { data: dbDepartments, isLoading: loading } = useDepartments();
-  const createDeptMutation = useCreateDepartment();
+  // Fetch departments and potential employees for HOD assignment
+  const { data: dbDepartments, isLoading: loading, refetch } = useDepartments();
+  const { data: empResponse } = useEmployees({ limit: 1000 }); // load all active staff members
 
+  const createDeptMutation = useCreateDepartment();
+  const updateDeptMutation = useUpdateDepartment();
+  const deleteDeptMutation = useDeleteDepartment();
+
+  const employees = empResponse?.data || [];
+
+  // Parse database records to dynamic frontend model
   const departments: Department[] = (dbDepartments || []).map((d: any) => ({
     id: d.id,
     name: d.name,
     code: d.code,
     head: d.manager_name || "Unassigned",
-    employeeCount: 10, // Mock or resolved count
-    budget: `$${parseFloat(d.budget || 0).toLocaleString()}`,
+    manager_id: d.manager_id,
+    employeeCount: parseInt(d.employee_count || 0),
+    budget: `₹${parseFloat(d.budget || 0).toLocaleString("en-IN")}`,
+    description: d.description,
   }));
 
   const handleCreateOrUpdate = async (values: any) => {
     try {
       if (editingDept) {
-        notification.warning({
-          message: "Edit Department",
-          description: "Modification of database department models is disabled in this sprint.",
+        await updateDeptMutation.mutateAsync({
+          id: editingDept.id,
+          payload: {
+            name: values.name,
+            code: values.code || undefined,
+            description: values.description || "",
+            managerId: values.managerId || null,
+            budget: values.budget || 0,
+          },
+        });
+        notification.success({
+          message: "Department Updated",
+          description: `Department ${values.name} was successfully modified.`,
         });
       } else {
         await createDeptMutation.mutateAsync({
           name: values.name,
-          code: values.code,
+          code: values.code || undefined,
           description: values.description || "",
-          budget: values.budget ? parseFloat(values.budget.replace(/[^0-9.-]+/g, "")) : 0,
+          managerId: values.managerId || null,
+          budget: values.budget || 0,
         });
         notification.success({
           message: "Department Created",
-          description: `Department ${values.name} was successfully created in PostgreSQL.`,
+          description: `Department ${values.name} was successfully created.`,
         });
       }
-    } catch (err) {
+      setModalOpen(false);
+      setEditingDept(null);
+    } catch (err: any) {
       console.error(err);
       notification.error({
         message: "Action Failed",
-        description: "Could not persist department configuration details.",
+        description: err.response?.data?.message || "Could not persist department configuration details.",
       });
     }
-    setModalOpen(false);
-    setEditingDept(null);
   };
 
   const handleEditTrigger = (record: Department) => {
@@ -69,11 +98,20 @@ const DepartmentPage: React.FC = () => {
     setModalOpen(true);
   };
 
-  const handleDelete = (_id: string) => {
-    notification.warning({
-      message: "Delete Protected",
-      description: "Deletion of primary organizational departments is restricted.",
-    });
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteDeptMutation.mutateAsync(id);
+      notification.success({
+        message: "Department Deleted",
+        description: "The department was soft-deleted successfully.",
+      });
+    } catch (err: any) {
+      console.error(err);
+      notification.error({
+        message: "Deletion Restrained",
+        description: err.response?.data?.message || "Active employees are assigned to this department. Please transfer them first.",
+      });
+    }
   };
 
   const totalEmployees = departments.reduce((acc, curr) => acc + curr.employeeCount, 0);
@@ -83,8 +121,8 @@ const DepartmentPage: React.FC = () => {
   }, 0);
 
   const columns: ColumnsType<Department> = [
-    { title: "Code", dataIndex: "code", key: "code", render: (text) => <span style={{ fontWeight: 600, color: "#475569" }}>{text}</span> },
-    { title: "Department Name", dataIndex: "name", key: "name", render: (text) => <span style={{ fontWeight: 600, color: "#1e293b" }}>{text}</span> },
+    { title: "Code", dataIndex: "code", key: "code", render: (text) => <span style={{ fontWeight: 600 }}>{text}</span> },
+    { title: "Department Name", dataIndex: "name", key: "name", render: (text) => <span style={{ fontWeight: 600 }}>{text}</span> },
     { title: "HOD / Head", dataIndex: "head", key: "head" },
     { title: "Employee Count", dataIndex: "employeeCount", key: "employeeCount" },
     { title: "Budget Allocation", dataIndex: "budget", key: "budget" },
@@ -93,8 +131,21 @@ const DepartmentPage: React.FC = () => {
       key: "actions",
       render: (_, record) => (
         <Space>
-          <Button type="text" icon={<EditOutlined />} onClick={() => handleEditTrigger(record)} />
-          <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
+          <Tooltip title="Edit Department">
+            <Button type="text" icon={<EditOutlined />} onClick={() => handleEditTrigger(record)} />
+          </Tooltip>
+          <Tooltip title="Delete Department">
+            <Popconfirm
+              title="Delete department?"
+              description="Make sure no active employees are assigned."
+              onConfirm={() => handleDelete(record.id)}
+              okText="Yes, Delete"
+              cancelText="No"
+              okButtonProps={{ danger: true }}
+            >
+              <Button type="text" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          </Tooltip>
         </Space>
       ),
     },
@@ -104,25 +155,28 @@ const DepartmentPage: React.FC = () => {
     <div style={{ maxWidth: "1600px", margin: "0 auto" }}>
       <Row justify="space-between" align="middle" style={{ marginBottom: "24px" }}>
         <Col>
-          <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#1e293b", margin: 0 }}>
+          <h2 style={{ fontSize: "22px", fontWeight: 700, margin: 0 }}>
             Department Management
           </h2>
-          <p style={{ margin: "4px 0 0 0", color: "#64748b", fontSize: "14px" }}>
+          <p style={{ margin: "4px 0 0 0", opacity: 0.8, fontSize: "14px" }}>
             Add, edit, or configure organization divisions and allocate yearly budgets.
           </p>
         </Col>
         <Col>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => {
-              setEditingDept(null);
-              setModalOpen(true);
-            }}
-            style={{ backgroundColor: "#0061FF", borderRadius: "6px", height: "40px" }}
-          >
-            Create Department
-          </Button>
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={() => refetch()} />
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                setEditingDept(null);
+                setModalOpen(true);
+              }}
+              style={{ backgroundColor: "#0061FF", borderRadius: "6px", height: "40px" }}
+            >
+              Create Department
+            </Button>
+          </Space>
         </Col>
       </Row>
 
@@ -130,7 +184,7 @@ const DepartmentPage: React.FC = () => {
       <DepartmentStats
         totalDepartments={departments.length}
         totalEmployees={totalEmployees}
-        totalBudget={`$${sumBudgetNum.toLocaleString()}`}
+        totalBudget={`₹${sumBudgetNum.toLocaleString("en-IN")}`}
       />
 
       {/* List/Grid toggles */}
@@ -154,7 +208,7 @@ const DepartmentPage: React.FC = () => {
           dataSource={departments}
           rowKey="id"
           pagination={false}
-          style={{ border: "1px solid #e2e8f0", borderRadius: "8px", overflow: "hidden" }}
+          style={{ borderRadius: "8px", overflow: "hidden" }}
         />
       ) : (
         <Row gutter={[24, 24]}>
@@ -178,6 +232,7 @@ const DepartmentPage: React.FC = () => {
         }}
         onSubmit={handleCreateOrUpdate}
         initialValues={editingDept}
+        employees={employees} // Provide active employees list for Head selection
       />
     </div>
   );

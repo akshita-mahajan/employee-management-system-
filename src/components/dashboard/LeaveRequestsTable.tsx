@@ -1,73 +1,47 @@
 import React from "react";
 import { Card, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { useLeaves } from "../../hooks/useHRMS";
+import dayjs from "dayjs";
 
 interface LeaveRequest {
   id: string;
-  employeeName: string;
-  department: string;
-  leaveType: string;
-  duration: string;
-  status: "PENDING" | "APPROVED" | "REJECTED";
+  employee_name: string;
+  leave_type_name: string;
+  start_date: string;
+  end_date: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | string;
 }
 
-const mockLeaveRequests: LeaveRequest[] = [
-  {
-    id: "1",
-    employeeName: "Alice Miller",
-    department: "Engineering",
-    leaveType: "Sick Leave",
-    duration: "2 days (Jun 12 - Jun 13)",
-    status: "PENDING",
-  },
-  {
-    id: "2",
-    employeeName: "Marcus Vance",
-    department: "Product Management",
-    leaveType: "Casual Leave",
-    duration: "3 days (Jun 15 - Jun 17)",
-    status: "APPROVED",
-  },
-  {
-    id: "3",
-    employeeName: "David Blake",
-    department: "Marketing",
-    leaveType: "Maternity/Paternity",
-    duration: "10 days (Jun 18 - Jun 28)",
-    status: "PENDING",
-  },
-  {
-    id: "4",
-    employeeName: "Sarah Connor",
-    department: "Human Resources",
-    leaveType: "Casual Leave",
-    duration: "1 day (Jun 14)",
-    status: "REJECTED",
-  },
-];
-
 export const LeaveRequestsTable: React.FC = () => {
+  const { data: leaves = [], isLoading } = useLeaves();
+
+  // Slice recent 5 requests
+  const recentLeaves = leaves.slice(0, 5);
+
   const columns: ColumnsType<LeaveRequest> = [
     {
       title: "Employee",
-      dataIndex: "employeeName",
-      key: "employeeName",
-      render: (text, record) => (
-        <div>
-          <div style={{ fontWeight: 600, color: "#1e293b" }}>{text}</div>
-          <div style={{ fontSize: "12px", color: "#64748b" }}>{record.department}</div>
-        </div>
+      dataIndex: "employee_name",
+      key: "employee_name",
+      render: (text) => (
+        <span style={{ fontWeight: 600 }}>{text}</span>
       ),
     },
     {
       title: "Leave Type",
-      dataIndex: "leaveType",
-      key: "leaveType",
+      dataIndex: "leave_type_name",
+      key: "leave_type_name",
     },
     {
       title: "Duration",
-      dataIndex: "duration",
       key: "duration",
+      render: (_, record) => {
+        const start = dayjs(record.start_date).format("MMM DD");
+        const end = dayjs(record.end_date).format("MMM DD");
+        const diff = dayjs(record.end_date).diff(dayjs(record.start_date), "day") + 1;
+        return `${diff} days (${start} - ${end})`;
+      },
     },
     {
       title: "Status",
@@ -88,17 +62,23 @@ export const LeaveRequestsTable: React.FC = () => {
 
   return (
     <Card
-      title={<span style={{ fontWeight: 600, fontSize: "16px", color: "#1e293b" }}>Recent Leave Requests</span>}
+      title={
+        <div>
+          <span style={{ fontWeight: 600, fontSize: "16px" }}>Recent Leave Requests</span>
+          <div style={{ fontSize: "12px", opacity: 0.6, fontWeight: 400 }}>Latest staff presence and absence filings</div>
+        </div>
+      }
       bordered={false}
       style={{
         borderRadius: "8px",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-        border: "1px solid #e2e8f0",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+        border: "1px solid rgba(0,0,0,0.05)",
       }}
     >
       <Table
+        loading={isLoading}
         columns={columns}
-        dataSource={mockLeaveRequests}
+        dataSource={recentLeaves}
         rowKey="id"
         pagination={false}
         size="middle"

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Layout, Menu, Drawer } from "antd";
+import { Layout, Menu, Drawer, theme } from "antd";
 import {
   DashboardOutlined,
   TeamOutlined,
@@ -15,6 +15,7 @@ import {
 } from "@ant-design/icons";
 
 import { useUIStore } from "../../app/store/uiStore";
+import { useAuthStore } from "../../app/store/authStore";
 import { ROUTES } from "../../constants/routes";
 
 import type { MenuProps } from "antd";
@@ -26,6 +27,9 @@ export const Sidebar: React.FC = () => {
   const navigate = useNavigate();
   const { sidebarCollapsed, setSidebarCollapsed } = useUIStore();
   const [isMobile, setIsMobile] = useState(false);
+  const { token } = theme.useToken();
+  const { user } = useAuthStore();
+  const role = user?.role || "EMPLOYEE";
 
   // Detect screen size to cleanly toggle between responsive drawer and desktop sider configurations
   useEffect(() => {
@@ -44,93 +48,137 @@ export const Sidebar: React.FC = () => {
     }
   };
 
-  const menuItems: MenuProps["items"] = [
-    {
+  const getFilteredMenuItems = (): MenuProps["items"] => {
+    const items: MenuProps["items"] = [];
+
+    // Dashboard is visible to all
+    items.push({
       key: ROUTES.DASHBOARD,
       icon: <DashboardOutlined />,
       label: "Dashboard",
-    },
-    {
-      key: "workforce-group",
-      label: "Workforce",
-      type: "group",
-      children: [
-        {
+    });
+
+    // Workforce Group (Super Admin, HR, Manager, Team Lead, Auditor)
+    if (["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "TEAM_LEAD", "AUDITOR"].includes(role)) {
+      const workforceChildren: any[] = [];
+      
+      // Employees list: Admins, HR, Manager, Auditor
+      if (["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "AUDITOR"].includes(role)) {
+        workforceChildren.push({
           key: ROUTES.EMPLOYEES,
           icon: <TeamOutlined />,
           label: "Employees",
-        },
-        {
+        });
+      }
+      
+      // Departments list: Admins, HR, Manager, Auditor
+      if (["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "AUDITOR"].includes(role)) {
+        workforceChildren.push({
           key: "/departments",
           icon: <ApartmentOutlined />,
           label: "Departments",
-        },
-        {
-          key: "/teams",
-          icon: <UsergroupAddOutlined />,
-          label: "Teams",
-        },
-      ],
-    },
-    {
-      key: "time-group",
-      label: "Time & Attendance",
-      type: "group",
-      children: [
-        {
-          key: ROUTES.ATTENDANCE,
-          icon: <CalendarOutlined />,
-          label: "Attendance Logs",
-        },
-        {
-          key: ROUTES.LEAVES,
-          icon: <ScheduleOutlined />,
-          label: "Leaves Tracker",
-        },
-      ],
-    },
-    {
-      key: "finance-group",
-      label: "Finance",
-      type: "group",
-      children: [
-        {
-          key: ROUTES.PAYROLL,
-          icon: <WalletOutlined />,
-          label: "Payroll History",
-        },
-        {
+        });
+      }
+      
+      // Teams: Admins, HR, Manager, Team Lead, Auditor
+      workforceChildren.push({
+        key: "/teams",
+        icon: <UsergroupAddOutlined />,
+        label: "Teams",
+      });
+
+      items.push({
+        key: "workforce-group",
+        label: "Workforce",
+        type: "group",
+        children: workforceChildren,
+      });
+    }
+
+    // Time & Attendance (All except Payroll Admin)
+    if (role !== "PAYROLL_ADMIN") {
+      items.push({
+        key: "time-group",
+        label: "Time & Attendance",
+        type: "group",
+        children: [
+          {
+            key: ROUTES.ATTENDANCE,
+            icon: <CalendarOutlined />,
+            label: "Attendance Logs",
+          },
+          {
+            key: ROUTES.LEAVES,
+            icon: <ScheduleOutlined />,
+            label: "Leaves Tracker",
+          },
+        ],
+      });
+    }
+
+    // Finance (Super Admin, Admin, Payroll Admin, Employee, Intern, Auditor)
+    if (["SUPER_ADMIN", "ADMIN", "PAYROLL_ADMIN", "EMPLOYEE", "INTERN", "AUDITOR"].includes(role)) {
+      const financeChildren: any[] = [];
+      
+      financeChildren.push({
+        key: ROUTES.PAYROLL,
+        icon: <WalletOutlined />,
+        label: "Payroll History",
+      });
+
+      // Assets only for Super Admin, Admin, HR, Auditor
+      if (["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "AUDITOR"].includes(role)) {
+        financeChildren.push({
           key: "/assets",
           icon: <LaptopOutlined />,
           label: "Asset Inventory",
-        },
-      ],
-    },
-    {
-      key: "reports-group",
-      label: "Audit & Analysis",
-      type: "group",
-      children: [
-        {
-          key: "/reports",
-          icon: <BarChartOutlined />,
-          label: "Reports",
-        },
-      ],
-    },
-    {
-      key: "admin-group",
-      label: "Administration",
-      type: "group",
-      children: [
-        {
-          key: ROUTES.SETTINGS,
-          icon: <SettingOutlined />,
-          label: "Settings",
-        },
-      ],
-    },
-  ];
+        });
+      }
+
+      items.push({
+        key: "finance-group",
+        label: "Finance",
+        type: "group",
+        children: financeChildren,
+      });
+    }
+
+    // Audit & Analysis / Reports (Super Admin, Admin, HR, Manager, Auditor)
+    if (["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "AUDITOR"].includes(role)) {
+      items.push({
+        key: "reports-group",
+        label: "Audit & Analysis",
+        type: "group",
+        children: [
+          {
+            key: "/reports",
+            icon: <BarChartOutlined />,
+            label: "Reports",
+          },
+        ],
+      });
+    }
+
+    // Administration (Super Admin / Admin only)
+    if (["SUPER_ADMIN", "ADMIN"].includes(role)) {
+      items.push({
+        key: "admin-group",
+        label: "Administration",
+        type: "group",
+        children: [
+          {
+            key: ROUTES.SETTINGS,
+            icon: <SettingOutlined />,
+            label: "Settings",
+          },
+        ],
+      });
+    }
+
+    return items;
+  };
+
+  const menuItems = getFilteredMenuItems();
 
   if (isMobile) {
     return (
@@ -162,12 +210,13 @@ export const Sidebar: React.FC = () => {
       width={256}
       collapsedWidth={80}
       style={{
-        borderRight: "1px solid #e2e8f0",
+        borderRight: `1px solid ${token.colorBorderSecondary}`,
         height: "100vh",
         position: "sticky",
         top: 0,
         left: 0,
         zIndex: 100,
+        backgroundColor: token.colorBgContainer,
       }}
     >
       {/* Sider Logo brand block */}
@@ -178,7 +227,7 @@ export const Sidebar: React.FC = () => {
           alignItems: "center",
           padding: "0 24px",
           gap: "12px",
-          borderBottom: "1px solid #e2e8f0",
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
         }}
       >
         <div
@@ -199,7 +248,7 @@ export const Sidebar: React.FC = () => {
           H
         </div>
         {!sidebarCollapsed && (
-          <span style={{ fontSize: "16px", fontWeight: 700, color: "#1e293b", letterSpacing: "0.2px" }}>
+          <span style={{ fontSize: "16px", fontWeight: 700, color: token.colorText, letterSpacing: "0.2px" }}>
             Enterprise HRMS
           </span>
         )}
@@ -215,6 +264,7 @@ export const Sidebar: React.FC = () => {
           overflowY: "auto",
           borderRight: 0,
           paddingTop: "12px",
+          backgroundColor: token.colorBgContainer,
         }}
       />
     </Sider>

@@ -4,6 +4,7 @@ import { api } from "../services/api/axios";
 // Query Keys
 export const queryKeys = {
   employees: ["employees"] as const,
+  employeeProfile: (id: string) => ["employees", id] as const,
   departments: ["departments"] as const,
   teams: ["teams"] as const,
   attendance: ["attendance"] as const,
@@ -14,6 +15,11 @@ export const queryKeys = {
   payslips: ["payslips"] as const,
   notifications: ["notifications"] as const,
   auditLogs: ["audit-logs"] as const,
+  dashboardAnalytics: ["dashboard-analytics"] as const,
+  reportDashboard: ["reports", "dashboard"] as const,
+  reportPayroll: (params?: any) => ["reports", "payroll", params] as const,
+  reportEmployees: (params?: any) => ["reports", "employees", params] as const,
+  reportAttendance: (params?: any) => ["reports", "attendance", params] as const,
 };
 
 // 1. EMPLOYEES HOOKS
@@ -27,6 +33,17 @@ export const useEmployees = (params?: any) => {
   });
 };
 
+export const useEmployee = (id: string) => {
+  return useQuery({
+    queryKey: queryKeys.employeeProfile(id),
+    queryFn: async () => {
+      const response = await api.get(`/employees/${id}`);
+      return response.data;
+    },
+    enabled: !!id,
+  });
+};
+
 export const useCreateEmployee = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -36,6 +53,48 @@ export const useCreateEmployee = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.employees });
+    },
+  });
+};
+
+export const useUpdateEmployee = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
+      const response = await api.put(`/employees/${id}`, payload);
+      return response.data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.employees });
+      queryClient.invalidateQueries({ queryKey: queryKeys.employeeProfile(variables.id) });
+    },
+  });
+};
+
+export const useDeleteEmployee = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.delete(`/employees/${id}`);
+      return response.data;
+    },
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.employees });
+      queryClient.invalidateQueries({ queryKey: queryKeys.employeeProfile(id) });
+    },
+  });
+};
+
+export const useRestoreEmployee = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.post(`/employees/${id}/restore`);
+      return response.data;
+    },
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.employees });
+      queryClient.invalidateQueries({ queryKey: queryKeys.employeeProfile(id) });
     },
   });
 };
@@ -64,6 +123,48 @@ export const useCreateDepartment = () => {
   });
 };
 
+export const useUpdateDepartment = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
+      const response = await api.put(`/departments/${id}`, payload);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.departments });
+      queryClient.invalidateQueries({ queryKey: queryKeys.employees });
+    },
+  });
+};
+
+export const useDeleteDepartment = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.delete(`/departments/${id}`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.departments });
+      queryClient.invalidateQueries({ queryKey: queryKeys.employees });
+    },
+  });
+};
+
+export const useRestoreDepartment = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.post(`/departments/${id}/restore`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.departments });
+      queryClient.invalidateQueries({ queryKey: queryKeys.employees });
+    },
+  });
+};
+
 // 3. TEAMS HOOKS
 export const useTeams = () => {
   return useQuery({
@@ -80,6 +181,45 @@ export const useCreateTeam = () => {
   return useMutation({
     mutationFn: async (payload: any) => {
       const response = await api.post("/teams", payload);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.teams });
+    },
+  });
+};
+
+export const useUpdateTeam = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
+      const response = await api.put(`/teams/${id}`, payload);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.teams });
+    },
+  });
+};
+
+export const useDeleteTeam = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.delete(`/teams/${id}`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.teams });
+    },
+  });
+};
+
+export const useRestoreTeam = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.post(`/teams/${id}/restore`);
       return response.data;
     },
     onSuccess: () => {
@@ -250,6 +390,71 @@ export const useAuditLogs = () => {
     queryFn: async () => {
       const response = await api.get("/audit-logs");
       return response.data;
+    },
+  });
+};
+
+// 10. DASHBOARD ANALYTICS HOOK
+export const useDashboardAnalytics = (params?: any) => {
+  return useQuery({
+    queryKey: [queryKeys.dashboardAnalytics, params],
+    queryFn: async () => {
+      const response = await api.get("/dashboard/analytics", { params });
+      return response.data;
+    },
+  });
+};
+
+// 11. REPORTS HOOKS
+export const useReportDashboard = () => {
+  return useQuery({
+    queryKey: queryKeys.reportDashboard,
+    queryFn: async () => {
+      const response = await api.get("/reports/dashboard");
+      return response.data;
+    },
+  });
+};
+
+export const useReportPayroll = (params?: any) => {
+  return useQuery({
+    queryKey: queryKeys.reportPayroll(params),
+    queryFn: async () => {
+      const response = await api.get("/reports/payroll", { params });
+      return response.data;
+    },
+  });
+};
+
+export const useReportEmployees = (params?: any) => {
+  return useQuery({
+    queryKey: queryKeys.reportEmployees(params),
+    queryFn: async () => {
+      const response = await api.get("/reports/employees", { params });
+      return response.data;
+    },
+  });
+};
+
+export const useReportAttendance = (params?: any) => {
+  return useQuery({
+    queryKey: queryKeys.reportAttendance(params),
+    queryFn: async () => {
+      const response = await api.get("/reports/attendance", { params });
+      return response.data;
+    },
+  });
+};
+
+export const useGenerateReport = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { name: string; category: string; fileFormat: string; scope?: string }) => {
+      const response = await api.post("/reports/generate", payload);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.reportDashboard });
     },
   });
 };

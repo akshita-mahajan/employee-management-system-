@@ -3,7 +3,9 @@ import * as dotenv from "dotenv";
 import path from "path";
 
 // Load environment variables from backend/.env file
-dotenv.config({ path: path.join(__dirname, "../../.env") });
+const envPath = path.join(__dirname, "../../.env");
+dotenv.config({ path: envPath });
+console.log(`[DB Pool Setup] Parameters: Host=${process.env.DB_HOST}, Port=${process.env.DB_PORT}, DB=${process.env.DB_NAME}, User=${process.env.DB_USER}, PwdLength=${process.env.DB_PASSWORD ? process.env.DB_PASSWORD.length : 0}`);
 
 const pool = new Pool({
   host: process.env.DB_HOST || "localhost",

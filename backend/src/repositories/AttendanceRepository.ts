@@ -18,7 +18,7 @@ export class AttendanceRepository extends BaseRepository<Attendance> {
   }
 
   async findPaginated(options: PaginationOptions): Promise<PaginationResult<Attendance>> {
-    const baseQuery = "SELECT id, employee_id, date, status FROM attendance";
+    const baseQuery = "SELECT id, employee_id, date, status, deleted_at FROM attendance";
     const searchableFields = ["status"];
     
     const { countQuery, dataQuery, params, page, limit } = buildPaginationQuery(

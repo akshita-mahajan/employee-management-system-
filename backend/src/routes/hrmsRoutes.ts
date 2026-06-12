@@ -1,5 +1,6 @@
-import { Router, Request, Response } from "express";
+import { Router, Response } from "express";
 import pool from "../config/database.js";
+import { checkRole, AuthenticatedRequest } from "../middleware/rbacMiddleware.js";
 
 const router = Router();
 
@@ -19,13 +20,16 @@ const logAudit = async (userId: string | null, action: string, module: string, o
 // -------------------------------------------------------------
 // 1. DEPARTMENTS
 // -------------------------------------------------------------
-router.get("/departments", async (req, res) => {
+router.get("/departments", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "TEAM_LEAD", "AUDITOR", "EMPLOYEE", "INTERN"]), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query(
-      `SELECT d.*, e.first_name || ' ' || e.last_name as manager_name 
+      `SELECT d.*, 
+              e.first_name || ' ' || e.last_name as manager_name,
+              (SELECT COUNT(*) FROM employees WHERE department_id = d.id AND deleted_at IS NULL) as employee_count
        FROM departments d 
        LEFT JOIN employees e ON d.manager_id = e.id 
-       WHERE d.deleted_at IS NULL`
+       WHERE d.deleted_at IS NULL
+       ORDER BY d.created_at DESC`
     );
     res.json(result.rows);
   } catch (error) {
@@ -33,75 +37,365 @@ router.get("/departments", async (req, res) => {
   }
 });
 
-router.post("/departments", async (req, res): Promise<any> => {
+router.post("/departments", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
   const { name, code, description, managerId, budget } = req.body;
+  if (!name) {
+    return res.status(400).json({ message: "Department name is required" });
+  }
+
   try {
-    const checkCode = await pool.query("SELECT 1 FROM departments WHERE code = $1 AND deleted_at IS NULL", [code]);
-    if (checkCode.rows.length > 0) {
-      return res.status(400).json({ message: "Department code already exists" });
+    const checkName = await pool.query("SELECT 1 FROM departments WHERE LOWER(name) = LOWER($1) AND deleted_at IS NULL", [name]);
+    if (checkName.rows.length > 0) {
+      return res.status(400).json({ message: "Department name already exists" });
     }
+
+    let resolvedCode = code;
+    if (!resolvedCode) {
+      const initials = name
+        .split(" ")
+        .map((word: string) => word[0])
+        .join("")
+        .toUpperCase()
+        .replace(/[^A-Z]/g, "");
+      
+      resolvedCode = initials || "DEPT";
+      
+      let uniqueCode = resolvedCode;
+      let suffix = 1;
+      while (true) {
+        const check = await pool.query("SELECT 1 FROM departments WHERE code = $1 AND deleted_at IS NULL", [uniqueCode]);
+        if (check.rows.length === 0) {
+          resolvedCode = uniqueCode;
+          break;
+        }
+        uniqueCode = `${resolvedCode}${suffix}`;
+        suffix++;
+      }
+    } else {
+      const checkCode = await pool.query("SELECT 1 FROM departments WHERE code = $1 AND deleted_at IS NULL", [resolvedCode]);
+      if (checkCode.rows.length > 0) {
+        return res.status(400).json({ message: "Department code already exists" });
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO departments (name, code, description, manager_id, budget) 
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [name, code, description, managerId || null, budget || 0.00]
+      [name, resolvedCode, description, managerId || null, budget || 0.00]
     );
-    await logAudit(null, "INSERT", "Department", null, result.rows[0]);
+    await logAudit(req.user?.id || null, "INSERT", "Department", null, result.rows[0]);
     res.status(201).json(result.rows[0]);
   } catch (error) {
+    console.error("Create department error:", error);
     res.status(500).json({ message: "Error creating department" });
+  }
+});
+
+router.put("/departments/:id", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
+  const id = req.params.id as string;
+  const { name, code, description, managerId, budget } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ message: "Department name is required" });
+  }
+
+  try {
+    const existing = await pool.query("SELECT * FROM departments WHERE id = $1 AND deleted_at IS NULL", [id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ message: "Department not found" });
+    }
+
+    const checkName = await pool.query(
+      "SELECT 1 FROM departments WHERE LOWER(name) = LOWER($1) AND deleted_at IS NULL AND id <> $2",
+      [name, id]
+    );
+    if (checkName.rows.length > 0) {
+      return res.status(400).json({ message: "Another department with this name already exists" });
+    }
+
+    if (code) {
+      const checkCode = await pool.query(
+        "SELECT 1 FROM departments WHERE code = $1 AND deleted_at IS NULL AND id <> $2",
+        [code, id]
+      );
+      if (checkCode.rows.length > 0) {
+        return res.status(400).json({ message: "Another department with this code already exists" });
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE departments 
+       SET name = $1, code = COALESCE($2, code), description = $3, manager_id = $4, budget = $5, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6 AND deleted_at IS NULL RETURNING *`,
+      [name, code || null, description, managerId || null, budget || 0.00, id]
+    );
+
+    await logAudit(req.user?.id || null, "UPDATE", "Department", existing.rows[0], result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Update department error:", error);
+    res.status(500).json({ message: "Error updating department" });
+  }
+});
+
+router.delete("/departments/:id", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
+  const id = req.params.id as string;
+  try {
+    const existing = await pool.query("SELECT * FROM departments WHERE id = $1 AND deleted_at IS NULL", [id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ message: "Department not found" });
+    }
+
+    const checkEmp = await pool.query("SELECT COUNT(*) as count FROM employees WHERE department_id = $1 AND deleted_at IS NULL", [id]);
+    const empCount = parseInt(checkEmp.rows[0].count);
+    if (empCount > 0) {
+      return res.status(400).json({ 
+        message: `Cannot delete department because it has ${empCount} active employee(s) assigned. Please transfer them to another department first.` 
+      });
+    }
+
+    const checkTeams = await pool.query("SELECT COUNT(*) as count FROM teams WHERE department_id = $1 AND deleted_at IS NULL", [id]);
+    const teamCount = parseInt(checkTeams.rows[0].count);
+    if (teamCount > 0) {
+      return res.status(400).json({ 
+        message: `Cannot delete department because it has ${teamCount} active team(s) assigned. Please reassign or delete the teams first.` 
+      });
+    }
+
+    await pool.query("UPDATE departments SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
+    await logAudit(req.user?.id || null, "DELETE", "Department", existing.rows[0], { deleted_at: new Date() });
+    res.json({ message: "Department soft-deleted successfully" });
+  } catch (error) {
+    console.error("Delete department error:", error);
+    res.status(500).json({ message: "Error deleting department" });
+  }
+});
+
+router.post("/departments/:id/restore", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
+  const id = req.params.id as string;
+  try {
+    const check = await pool.query("SELECT * FROM departments WHERE id = $1 AND deleted_at IS NOT NULL", [id]);
+    if (check.rows.length === 0) {
+      return res.status(404).json({ message: "Department not found or not deleted" });
+    }
+
+    await pool.query("UPDATE departments SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
+    await logAudit(req.user?.id || null, "RESTORE", "Department", check.rows[0], { deleted_at: null });
+    res.json({ message: "Department restored successfully" });
+  } catch (error) {
+    console.error("Restore department error:", error);
+    res.status(500).json({ message: "Error restoring department" });
   }
 });
 
 // -------------------------------------------------------------
 // 2. TEAMS
 // -------------------------------------------------------------
-router.get("/teams", async (req, res) => {
+router.get("/teams", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "TEAM_LEAD", "AUDITOR"]), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query(
-      `SELECT t.*, d.name as department_name, e.first_name || ' ' || e.last_name as lead_name 
+      `SELECT t.*, d.name as department_name, 
+              e.first_name || ' ' || e.last_name as lead_name,
+              COALESCE(
+                (SELECT json_agg(em.first_name || ' ' || em.last_name) 
+                 FROM team_members tm 
+                 JOIN employees em ON tm.employee_id = em.id 
+                 WHERE tm.team_id = t.id AND em.deleted_at IS NULL), 
+                '[]'::json
+              ) as members_list,
+              COALESCE(
+                (SELECT json_agg(tm.employee_id)
+                 FROM team_members tm
+                 JOIN employees em ON tm.employee_id = em.id
+                 WHERE tm.team_id = t.id AND em.deleted_at IS NULL),
+                '[]'::json
+              ) as member_ids,
+              COALESCE(
+                (SELECT COUNT(*) 
+                 FROM team_members tm
+                 JOIN employees em ON tm.employee_id = em.id
+                 WHERE tm.team_id = t.id AND em.deleted_at IS NULL), 
+                0
+              ) as members_count
        FROM teams t 
        LEFT JOIN departments d ON t.department_id = d.id 
        LEFT JOIN employees e ON t.team_lead_id = e.id 
-       WHERE t.deleted_at IS NULL`
+       WHERE t.deleted_at IS NULL
+       ORDER BY t.created_at DESC`
     );
     res.json(result.rows);
   } catch (error) {
+    console.error("Fetch teams failed:", error);
     res.status(500).json({ message: "Error loading teams" });
   }
 });
 
-router.post("/teams", async (req, res): Promise<any> => {
-  const { name, code, departmentId, teamLeadId } = req.body;
+router.post("/teams", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
+  const { name, code, departmentId, teamLeadId, memberIds } = req.body;
+  if (!name || !departmentId) {
+    return res.status(400).json({ message: "Team name and department are required" });
+  }
+
+  const client = await pool.connect();
   try {
-    const checkCode = await pool.query("SELECT 1 FROM teams WHERE code = $1 AND deleted_at IS NULL", [code]);
+    await client.query("BEGIN");
+
+    const checkDept = await client.query("SELECT 1 FROM departments WHERE id = $1 AND deleted_at IS NULL", [departmentId]);
+    if (checkDept.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Selected department does not exist or has been deleted" });
+    }
+
+    let resolvedCode = code || `TEAM-${name.split(" ").map((w: string) => w[0]).join("").toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+    const checkCode = await client.query("SELECT 1 FROM teams WHERE code = $1 AND deleted_at IS NULL", [resolvedCode]);
     if (checkCode.rows.length > 0) {
+      await client.query("ROLLBACK");
       return res.status(400).json({ message: "Team code already exists" });
     }
-    const result = await pool.query(
+
+    const teamRes = await client.query(
       `INSERT INTO teams (name, code, department_id, team_lead_id) 
        VALUES ($1, $2, $3, $4) RETURNING *`,
-      [name, code, departmentId, teamLeadId || null]
+      [name, resolvedCode, departmentId, teamLeadId || null]
     );
-    await logAudit(null, "INSERT", "Team", null, result.rows[0]);
-    res.status(201).json(result.rows[0]);
+    const newTeam = teamRes.rows[0];
+
+    if (memberIds && Array.isArray(memberIds)) {
+      for (const empId of memberIds) {
+        const checkDuplicate = await client.query(
+          `SELECT t.name FROM team_members tm
+           JOIN teams t ON tm.team_id = t.id
+           WHERE tm.employee_id = $1 AND t.department_id = $2 AND t.deleted_at IS NULL`,
+          [empId, departmentId]
+        );
+        if (checkDuplicate.rows.length > 0) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ 
+            message: `Employee is already assigned to team '${checkDuplicate.rows[0].name}' in this department. Duplicate assignments are restricted.` 
+          });
+        }
+
+        await client.query(
+          "INSERT INTO team_members (team_id, employee_id) VALUES ($1, $2)",
+          [newTeam.id, empId]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+    await logAudit(req.user?.id || null, "INSERT", "Team", null, newTeam);
+    res.status(201).json(newTeam);
   } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Create team error:", error);
     res.status(500).json({ message: "Error creating team" });
+  } finally {
+    client.release();
+  }
+});
+
+router.put("/teams/:id", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "TEAM_LEAD"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
+  const id = req.params.id;
+  const { name, code, departmentId, teamLeadId, memberIds } = req.body;
+  if (!name || !departmentId) {
+    return res.status(400).json({ message: "Team name and department are required" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const existing = await client.query("SELECT * FROM teams WHERE id = $1 AND deleted_at IS NULL", [id]);
+    if (existing.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Team not found" });
+    }
+
+    const checkDept = await client.query("SELECT 1 FROM departments WHERE id = $1 AND deleted_at IS NULL", [departmentId]);
+    if (checkDept.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Selected department does not exist or has been deleted" });
+    }
+
+    if (code) {
+      const checkCode = await client.query("SELECT 1 FROM teams WHERE code = $1 AND deleted_at IS NULL AND id <> $2", [code, id]);
+      if (checkCode.rows.length > 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "Team code already exists for another team" });
+      }
+    }
+
+    const teamRes = await client.query(
+      `UPDATE teams 
+       SET name = $1, code = COALESCE($2, code), department_id = $3, team_lead_id = $4, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $5 RETURNING *`,
+      [name, code || null, departmentId, teamLeadId || null, id]
+    );
+    const updatedTeam = teamRes.rows[0];
+
+    await client.query("DELETE FROM team_members WHERE team_id = $1", [id]);
+    if (memberIds && Array.isArray(memberIds)) {
+      for (const empId of memberIds) {
+        const checkDuplicate = await client.query(
+          `SELECT t.name FROM team_members tm
+           JOIN teams t ON tm.team_id = t.id
+           WHERE tm.employee_id = $1 AND t.department_id = $2 AND t.deleted_at IS NULL AND t.id <> $3`,
+          [empId, departmentId, id]
+        );
+        if (checkDuplicate.rows.length > 0) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ 
+            message: `Employee is already assigned to team '${checkDuplicate.rows[0].name}' in this department. Duplicate assignments are restricted.` 
+          });
+        }
+
+        await client.query(
+          "INSERT INTO team_members (team_id, employee_id) VALUES ($1, $2)",
+          [id, empId]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+    await logAudit(req.user?.id || null, "UPDATE", "Team", existing.rows[0], updatedTeam);
+    res.json(updatedTeam);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Update team error:", error);
+    res.status(500).json({ message: "Error updating team" });
+  } finally {
+    client.release();
+  }
+});
+
+router.delete("/teams/:id", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
+  const id = req.params.id;
+  try {
+    const existing = await pool.query("SELECT * FROM teams WHERE id = $1 AND deleted_at IS NULL", [id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ message: "Team not found" });
+    }
+
+    await pool.query("UPDATE teams SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
+    await logAudit(req.user?.id || null, "DELETE", "Team", existing.rows[0], { deleted_at: new Date() });
+    res.json({ message: "Team soft-deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Error deleting team" });
   }
 });
 
 // -------------------------------------------------------------
 // 3. ATTENDANCE
 // -------------------------------------------------------------
-router.get("/attendance", async (req, res) => {
+router.get("/attendance", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "TEAM_LEAD", "AUDITOR"]), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query(
-      `SELECT a.*, e.first_name || ' ' || e.last_name as employee_name, 
-              e.employee_id, al.check_in, al.check_out, al.overtime_mins, al.is_late
+      `SELECT a.*, e.first_name || ' ' || e.last_name as employee_name,
+              al.check_in, al.check_out, al.overtime_mins, al.is_late
        FROM attendance a
        JOIN employees e ON a.employee_id = e.id
        LEFT JOIN attendance_logs al ON a.id = al.attendance_id
        WHERE a.deleted_at IS NULL
-       ORDER BY a.date DESC`
+       ORDER BY a.date DESC, al.check_in DESC`
     );
     res.json(result.rows);
   } catch (error) {
@@ -109,15 +403,47 @@ router.get("/attendance", async (req, res) => {
   }
 });
 
-router.post("/attendance/checkin", async (req, res): Promise<any> => {
-  const { employeeId, date, status } = req.body;
+router.get("/attendance/:employeeId", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "TEAM_LEAD", "AUDITOR", "EMPLOYEE", "INTERN"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
   try {
+    // Security check: Employee can only see their own attendance logs
+    if (req.user?.role === "EMPLOYEE" || req.user?.role === "INTERN") {
+      const empCheck = await pool.query("SELECT email FROM employees WHERE id = $1", [req.params.employeeId]);
+      if (empCheck.rows.length === 0 || empCheck.rows[0].email !== req.user.email) {
+        return res.status(403).json({ message: "Access Denied: Employees can only view their own attendance" });
+      }
+    }
+
+    const result = await pool.query(
+      `SELECT a.*, al.check_in, al.check_out, al.overtime_mins, al.is_late
+       FROM attendance a
+       LEFT JOIN attendance_logs al ON a.id = al.attendance_id
+       WHERE a.employee_id = $1 AND a.deleted_at IS NULL
+       ORDER BY a.date DESC`,
+      [req.params.employeeId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ message: "Error loading employee attendance" });
+  }
+});
+
+router.post("/attendance/check-in", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "TEAM_LEAD", "EMPLOYEE", "INTERN"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
+  const { employeeId } = req.body;
+  try {
+    // Security check: Employee can only check-in for themselves
+    if (req.user?.role === "EMPLOYEE" || req.user?.role === "INTERN") {
+      const empCheck = await pool.query("SELECT email FROM employees WHERE id = $1", [employeeId]);
+      if (empCheck.rows.length === 0 || empCheck.rows[0].email !== req.user.email) {
+        return res.status(403).json({ message: "Access Denied: Employees can only check-in for themselves" });
+      }
+    }
+
     const attRes = await pool.query(
       `INSERT INTO attendance (employee_id, date, status) 
-       VALUES ($1, $2, $3) 
-       ON CONFLICT (employee_id, date) DO UPDATE SET status = EXCLUDED.status, updated_at = CURRENT_TIMESTAMP
+       VALUES ($1, CURRENT_DATE, 'PRESENT') 
+       ON CONFLICT (employee_id, date) DO UPDATE SET status = 'PRESENT', updated_at = CURRENT_TIMESTAMP
        RETURNING *`,
-      [employeeId, date || new Date().toISOString().split("T")[0], status || "PRESENT"]
+      [employeeId]
     );
     
     const attendanceId = attRes.rows[0].id;
@@ -128,17 +454,52 @@ router.post("/attendance/checkin", async (req, res): Promise<any> => {
       [attendanceId]
     );
     
-    await logAudit(null, "CHECK_IN", "Attendance", null, { attendance: attRes.rows[0], log: logRes.rows[0] });
+    await logAudit(req.user?.id || null, "CHECK_IN", "Attendance", null, { attendance: attRes.rows[0], log: logRes.rows[0] });
     res.status(201).json({ attendance: attRes.rows[0], log: logRes.rows[0] });
   } catch (error) {
     res.status(500).json({ message: "Error executing check-in" });
   }
 });
 
+router.post("/attendance/check-out", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "TEAM_LEAD", "EMPLOYEE", "INTERN"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
+  const { employeeId } = req.body;
+  try {
+    // Security check: Employee can only check-out for themselves
+    if (req.user?.role === "EMPLOYEE" || req.user?.role === "INTERN") {
+      const empCheck = await pool.query("SELECT email FROM employees WHERE id = $1", [employeeId]);
+      if (empCheck.rows.length === 0 || empCheck.rows[0].email !== req.user.email) {
+        return res.status(403).json({ message: "Access Denied: Employees can only check-out for themselves" });
+      }
+    }
+
+    const attRes = await pool.query(
+      "SELECT id FROM attendance WHERE employee_id = $1 AND date = CURRENT_DATE AND deleted_at IS NULL",
+      [employeeId]
+    );
+    if (attRes.rows.length === 0) {
+      return res.status(404).json({ message: "Check-in log not found for today" });
+    }
+
+    const attendanceId = attRes.rows[0].id;
+
+    const logRes = await pool.query(
+      `UPDATE attendance_logs 
+       SET check_out = CURRENT_TIMESTAMP 
+       WHERE attendance_id = $1 AND check_out IS NULL RETURNING *`,
+      [attendanceId]
+    );
+
+    await logAudit(req.user?.id || null, "CHECK_OUT", "Attendance", null, { log: logRes.rows[0] });
+    res.json({ success: true, log: logRes.rows[0] });
+  } catch (error) {
+    res.status(500).json({ message: "Error executing check-out" });
+  }
+});
+
 // -------------------------------------------------------------
 // 4. LEAVE MANAGEMENT
 // -------------------------------------------------------------
-router.get("/leaves", async (req, res) => {
+router.get("/leaves", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "TEAM_LEAD", "AUDITOR"]), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query(
       `SELECT lr.*, e.first_name || ' ' || e.last_name as employee_name, lt.name as leave_type_name
@@ -154,8 +515,16 @@ router.get("/leaves", async (req, res) => {
   }
 });
 
-router.get("/leaves/balances/:employeeId", async (req, res) => {
+router.get("/leaves/balances/:employeeId", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "TEAM_LEAD", "AUDITOR", "EMPLOYEE", "INTERN"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
   try {
+    // Security check: Employee can only view their own leave balances
+    if (req.user?.role === "EMPLOYEE" || req.user?.role === "INTERN") {
+      const empCheck = await pool.query("SELECT email FROM employees WHERE id = $1", [req.params.employeeId]);
+      if (empCheck.rows.length === 0 || empCheck.rows[0].email !== req.user.email) {
+        return res.status(403).json({ message: "Access Denied: Employees can only view their own leave balances" });
+      }
+    }
+
     const result = await pool.query(
       `SELECT lb.*, lt.name as leave_type_name
        FROM leave_balances lb
@@ -169,22 +538,30 @@ router.get("/leaves/balances/:employeeId", async (req, res) => {
   }
 });
 
-router.post("/leaves", async (req, res): Promise<any> => {
+router.post("/leaves", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "TEAM_LEAD", "EMPLOYEE", "INTERN"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
   const { employeeId, leaveTypeId, startDate, endDate, reason } = req.body;
   try {
+    // Security check: Employee can only submit leave requests for themselves
+    if (req.user?.role === "EMPLOYEE" || req.user?.role === "INTERN") {
+      const empCheck = await pool.query("SELECT email FROM employees WHERE id = $1", [employeeId]);
+      if (empCheck.rows.length === 0 || empCheck.rows[0].email !== req.user.email) {
+        return res.status(403).json({ message: "Access Denied: Employees can only request leaves for themselves" });
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO leave_requests (employee_id, leave_type_id, start_date, end_date, reason, status) 
        VALUES ($1, $2, $3, $4, $5, 'PENDING') RETURNING *`,
       [employeeId, leaveTypeId, startDate, endDate, reason]
     );
-    await logAudit(null, "INSERT", "LeaveRequest", null, result.rows[0]);
+    await logAudit(req.user?.id || null, "INSERT", "LeaveRequest", null, result.rows[0]);
     res.status(201).json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ message: "Error submitting leave request" });
   }
 });
 
-router.put("/leaves/:id/status", async (req, res): Promise<any> => {
+router.put("/leaves/:id/status", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "MANAGER", "TEAM_LEAD"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
   const { status, approvedBy } = req.body;
   try {
     const checkReq = await pool.query("SELECT * FROM leave_requests WHERE id = $1", [req.params.id]);
@@ -199,7 +576,6 @@ router.put("/leaves/:id/status", async (req, res): Promise<any> => {
       [status, approvedBy || null, req.params.id]
     );
 
-    // If approved, update leave balance
     if (status === "APPROVED") {
       const leave = result.rows[0];
       const start = new Date(leave.start_date);
@@ -214,7 +590,7 @@ router.put("/leaves/:id/status", async (req, res): Promise<any> => {
       );
     }
 
-    await logAudit(null, "UPDATE_STATUS", "LeaveRequest", checkReq.rows[0], result.rows[0]);
+    await logAudit(req.user?.id || null, "UPDATE_STATUS", "LeaveRequest", checkReq.rows[0], result.rows[0]);
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ message: "Error updating leave status" });
@@ -224,7 +600,7 @@ router.put("/leaves/:id/status", async (req, res): Promise<any> => {
 // -------------------------------------------------------------
 // 5. ASSETS
 // -------------------------------------------------------------
-router.get("/assets", async (req, res) => {
+router.get("/assets", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "AUDITOR"]), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query(
       `SELECT a.*, c.name as category_name, 
@@ -241,7 +617,7 @@ router.get("/assets", async (req, res) => {
   }
 });
 
-router.post("/assets", async (req, res): Promise<any> => {
+router.post("/assets", checkRole(["SUPER_ADMIN", "ADMIN"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
   const { categoryId, name, code, value, status } = req.body;
   try {
     const checkCode = await pool.query("SELECT 1 FROM assets WHERE code = $1 AND deleted_at IS NULL", [code]);
@@ -253,14 +629,14 @@ router.post("/assets", async (req, res): Promise<any> => {
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [categoryId, name, code, value || 0.00, status || "Available"]
     );
-    await logAudit(null, "INSERT", "Asset", null, result.rows[0]);
+    await logAudit(req.user?.id || null, "INSERT", "Asset", null, result.rows[0]);
     res.status(201).json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ message: "Error creating asset" });
   }
 });
 
-router.post("/assets/:id/assign", async (req, res): Promise<any> => {
+router.post("/assets/:id/assign", checkRole(["SUPER_ADMIN", "ADMIN"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
   const { employeeId, notes } = req.body;
   const assetId = req.params.id;
   try {
@@ -280,14 +656,14 @@ router.post("/assets/:id/assign", async (req, res): Promise<any> => {
       [assetId, `Assigned to employee ${employeeId}`]
     );
 
-    await logAudit(null, "ASSIGN", "Asset", checkAsset.rows[0], { employeeId });
+    await logAudit(req.user?.id || null, "ASSIGN", "Asset", checkAsset.rows[0], { employeeId });
     res.json({ success: true, message: "Asset assigned successfully" });
   } catch (error) {
     res.status(500).json({ message: "Error assigning asset" });
   }
 });
 
-router.post("/assets/:id/return", async (req, res): Promise<any> => {
+router.post("/assets/:id/return", checkRole(["SUPER_ADMIN", "ADMIN"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
   const assetId = req.params.id;
   try {
     const checkAsset = await pool.query("SELECT * FROM assets WHERE id = $1 AND deleted_at IS NULL", [assetId]);
@@ -307,7 +683,7 @@ router.post("/assets/:id/return", async (req, res): Promise<any> => {
       [assetId]
     );
 
-    await logAudit(null, "RETURN", "Asset", checkAsset.rows[0], { status: "Available" });
+    await logAudit(req.user?.id || null, "RETURN", "Asset", checkAsset.rows[0], { status: "Available" });
     res.json({ success: true, message: "Asset returned successfully" });
   } catch (error) {
     res.status(500).json({ message: "Error returning asset" });
@@ -317,7 +693,7 @@ router.post("/assets/:id/return", async (req, res): Promise<any> => {
 // -------------------------------------------------------------
 // 6. PAYROLL
 // -------------------------------------------------------------
-router.get("/payroll/runs", async (req, res) => {
+router.get("/payroll/runs", checkRole(["SUPER_ADMIN", "ADMIN", "PAYROLL_ADMIN", "AUDITOR"]), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query("SELECT * FROM payroll_runs WHERE deleted_at IS NULL ORDER BY created_at DESC");
     res.json(result.rows);
@@ -326,8 +702,21 @@ router.get("/payroll/runs", async (req, res) => {
   }
 });
 
-router.get("/payroll/payslips", async (req, res) => {
+router.get("/payroll/payslips", checkRole(["SUPER_ADMIN", "ADMIN", "PAYROLL_ADMIN", "AUDITOR", "EMPLOYEE", "INTERN"]), async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Security check: Employees and interns can only fetch their own payslips
+    if (req.user?.role === "EMPLOYEE" || req.user?.role === "INTERN") {
+      const result = await pool.query(
+        `SELECT p.*, e.first_name || ' ' || e.last_name as employee_name, e.employee_id, pr.billing_month
+         FROM payslips p
+         JOIN employees e ON p.employee_id = e.id
+         JOIN payroll_runs pr ON p.payroll_run_id = pr.id
+         WHERE p.deleted_at IS NULL AND e.email = $1`,
+        [req.user.email]
+      );
+      return res.json(result.rows);
+    }
+
     const result = await pool.query(
       `SELECT p.*, e.first_name || ' ' || e.last_name as employee_name, e.employee_id, pr.billing_month
        FROM payslips p
@@ -344,7 +733,7 @@ router.get("/payroll/payslips", async (req, res) => {
 // -------------------------------------------------------------
 // 7. NOTIFICATIONS
 // -------------------------------------------------------------
-router.get("/notifications", async (req, res) => {
+router.get("/notifications", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "PAYROLL_ADMIN", "MANAGER", "TEAM_LEAD", "EMPLOYEE", "INTERN", "AUDITOR"]), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50");
     res.json(result.rows);
@@ -356,17 +745,134 @@ router.get("/notifications", async (req, res) => {
 // -------------------------------------------------------------
 // 8. AUDIT LOGS
 // -------------------------------------------------------------
-router.get("/audit-logs", async (req, res) => {
+router.get("/audit-logs", checkRole(["SUPER_ADMIN", "ADMIN", "AUDITOR"]), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query(
       `SELECT a.*, u.email as user_email 
        FROM audit_logs a 
        LEFT JOIN users u ON a.user_id = u.id 
        ORDER BY a.created_at DESC LIMIT 100`
-    );
+      );
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ message: "Error loading audit logs" });
+  }
+});
+
+// -------------------------------------------------------------
+// 9. DASHBOARD BUSINESS INTELLIGENCE ANALYTICS
+// -------------------------------------------------------------
+router.get("/dashboard/analytics", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "PAYROLL_ADMIN", "MANAGER", "TEAM_LEAD", "AUDITOR"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
+  try {
+    const activeEmpRes = await pool.query("SELECT COUNT(*) as count FROM employees WHERE deleted_at IS NULL");
+    const prevEmpRes = await pool.query("SELECT COUNT(*) as count FROM employees WHERE deleted_at IS NULL AND created_at < DATE_TRUNC('month', CURRENT_DATE)");
+    
+    const activeCount = parseInt(activeEmpRes.rows[0].count);
+    const prevCount = parseInt(prevEmpRes.rows[0].count);
+    const employeeGrowth = prevCount > 0 ? parseFloat(((activeCount - prevCount) * 100.0 / prevCount).toFixed(1)) : 0;
+
+    const payrollRes = await pool.query("SELECT COALESCE(SUM(net_pay), 0) as paid FROM payslips WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE) AND deleted_at IS NULL");
+    const prevPayrollRes = await pool.query("SELECT COALESCE(SUM(net_pay), 0) as paid FROM payslips WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND created_at < DATE_TRUNC('month', CURRENT_DATE) AND deleted_at IS NULL");
+    
+    const paidPayroll = parseFloat(payrollRes.rows[0].paid);
+    const prevPayroll = parseFloat(prevPayrollRes.rows[0].paid);
+    const payrollVariance = prevPayroll > 0 ? parseFloat(((paidPayroll - prevPayroll) * 100.0 / prevPayroll).toFixed(1)) : 0;
+
+    const attRes = await pool.query("SELECT COALESCE(ROUND((COUNT(CASE WHEN status = 'PRESENT' THEN 1 END) * 100.0) / NULLIF(COUNT(*), 0), 1), 0.0) as rate FROM attendance WHERE date >= DATE_TRUNC('month', CURRENT_DATE) AND deleted_at IS NULL");
+    const prevAttRes = await pool.query("SELECT COALESCE(ROUND((COUNT(CASE WHEN status = 'PRESENT' THEN 1 END) * 100.0) / NULLIF(COUNT(*), 0), 1), 0.0) as rate FROM attendance WHERE date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND date < DATE_TRUNC('month', CURRENT_DATE) AND deleted_at IS NULL");
+    
+    const attRate = parseFloat(attRes.rows[0].rate);
+    const prevAttRate = parseFloat(prevAttRes.rows[0].rate);
+    const attGrowth = parseFloat((attRate - prevAttRate).toFixed(1));
+
+    const trendRes = await pool.query(
+      `SELECT 
+         TO_CHAR(date_series, 'Mon YYYY') as month,
+         COALESCE(
+           (SELECT SUM(p.net_pay) 
+            FROM payslips p 
+            WHERE DATE_TRUNC('month', p.created_at) = DATE_TRUNC('month', date_series) AND p.deleted_at IS NULL), 
+           0
+         )::double precision as actual_paid,
+         COALESCE(
+           (SELECT SUM(d.budget) 
+            FROM departments d 
+            WHERE d.deleted_at IS NULL),
+           0
+         )::double precision as total_budget
+       FROM GENERATE_SERIES(
+         CURRENT_DATE - INTERVAL '5 months',
+         CURRENT_DATE,
+         '1 month'::interval
+       ) date_series
+       ORDER BY date_series ASC`
+    );
+
+    const deptDistRes = await pool.query(
+      `SELECT 
+         d.id,
+         d.name,
+         d.code,
+         d.budget::double precision,
+         COALESCE(e_mgr.first_name || ' ' || e_mgr.last_name, 'Unassigned') as manager_name,
+         COUNT(e.id)::integer as employee_count,
+         COALESCE(AVG(ss.base_salary + ss.hra + ss.lta), 0)::double precision as avg_salary,
+         COALESCE(
+           (SELECT ROUND((COUNT(CASE WHEN att.status = 'PRESENT' THEN 1 END) * 100.0) / NULLIF(COUNT(*), 0), 1)
+            FROM attendance att
+            WHERE att.employee_id IN (SELECT id FROM employees WHERE department_id = d.id AND deleted_at IS NULL)
+            AND att.date >= DATE_TRUNC('month', CURRENT_DATE)
+            AND att.deleted_at IS NULL),
+           0.0
+         )::double precision as avg_attendance
+       FROM departments d
+       LEFT JOIN employees e_mgr ON d.manager_id = e_mgr.id
+       LEFT JOIN employees e ON e.department_id = d.id AND e.deleted_at IS NULL
+       LEFT JOIN salary_structures ss ON ss.employee_id = e.id AND ss.deleted_at IS NULL
+       WHERE d.deleted_at IS NULL
+       GROUP BY d.id, d.name, d.code, d.budget, e_mgr.first_name, e_mgr.last_name`
+    );
+
+    const salaryDistRes = await pool.query(
+      `SELECT 
+         COUNT(CASE WHEN base_salary < 30000 THEN 1 END)::integer as bracket_low,
+         COUNT(CASE WHEN base_salary >= 30000 AND base_salary < 70000 THEN 1 END)::integer as bracket_mid,
+         COUNT(CASE WHEN base_salary >= 70000 AND base_salary < 150000 THEN 1 END)::integer as bracket_high,
+         COUNT(CASE WHEN base_salary >= 150000 THEN 1 END)::integer as bracket_exec
+       FROM salary_structures
+       WHERE deleted_at IS NULL`
+    );
+
+    const growthRes = await pool.query(
+      `SELECT 
+         TO_CHAR(date_series, 'Mon YYYY') as month,
+         COALESCE(
+           (SELECT COUNT(*) FROM employees WHERE DATE_TRUNC('month', joining_date) = DATE_TRUNC('month', date_series) AND deleted_at IS NULL),
+           0
+         )::integer as new_hires
+       FROM GENERATE_SERIES(
+         CURRENT_DATE - INTERVAL '11 months',
+         CURRENT_DATE,
+         '1 month'::interval
+       ) date_series
+       ORDER BY date_series ASC`
+    );
+
+    res.json({
+      kpis: {
+        totalEmployees: { value: activeCount, growth: employeeGrowth },
+        totalPayroll: { value: paidPayroll, growth: payrollVariance },
+        attendanceRate: { value: attRate, growth: attGrowth }
+      },
+      payrollTrend: trendRes.rows,
+      departments: deptDistRes.rows,
+      salaryDistribution: salaryDistRes.rows[0] || { bracket_low: 0, bracket_mid: 0, bracket_high: 0, bracket_exec: 0 },
+      workforceGrowth: growthRes.rows
+    });
+
+  } catch (error) {
+    console.error("Fetch analytics report failed:", error);
+    res.status(500).json({ message: "Error loading business intelligence report" });
   }
 });
 

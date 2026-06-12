@@ -6,10 +6,10 @@ import * as z from "zod";
 
 const teamSchema = z.object({
   name: z.string().min(1, "Team Name is required"),
-  code: z.string().min(2, "Team Code must be at least 2 characters"),
-  department: z.string().min(1, "Department is required"),
-  lead: z.string().min(1, "Team Lead assignment is required"),
-  membersListString: z.string().min(1, "Please provide at least one team member"),
+  code: z.string().optional(),
+  departmentId: z.string().min(1, "Department is required"),
+  teamLeadId: z.string().nullable().optional(),
+  memberIds: z.array(z.string()).optional(),
 });
 
 type TeamFormValues = z.infer<typeof teamSchema>;
@@ -19,6 +19,8 @@ interface TeamFormModalProps {
   onCancel: () => void;
   onSubmit: (values: any) => void;
   initialValues?: any;
+  departments?: any[];
+  employees?: any[];
 }
 
 export const TeamFormModal: React.FC<TeamFormModalProps> = ({
@@ -26,54 +28,63 @@ export const TeamFormModal: React.FC<TeamFormModalProps> = ({
   onCancel,
   onSubmit,
   initialValues,
+  departments = [],
+  employees = [],
 }) => {
   const { control, handleSubmit, reset } = useForm<TeamFormValues>({
     resolver: zodResolver(teamSchema),
     defaultValues: {
       name: "",
       code: "",
-      department: "",
-      lead: "",
-      membersListString: "",
+      departmentId: "",
+      teamLeadId: null,
+      memberIds: [],
     },
   });
 
   useEffect(() => {
-    if (initialValues) {
-      reset({
-        name: initialValues.name,
-        code: initialValues.code,
-        department: initialValues.department,
-        lead: initialValues.lead,
-        membersListString: initialValues.membersList.join(", "),
-      });
-    } else {
-      reset({
-        name: "",
-        code: "",
-        department: "",
-        lead: "",
-        membersListString: "",
-      });
+    if (open) {
+      if (initialValues) {
+        reset({
+          name: initialValues.name || "",
+          code: initialValues.code || "",
+          departmentId: initialValues.department_id || "",
+          teamLeadId: initialValues.team_lead_id || null,
+          memberIds: initialValues.member_ids || [],
+        });
+      } else {
+        reset({
+          name: "",
+          code: "",
+          departmentId: "",
+          teamLeadId: null,
+          memberIds: [],
+        });
+      }
     }
   }, [initialValues, reset, open]);
 
   const handleFormSubmit = (data: TeamFormValues) => {
-    const list = data.membersListString.split(",").map((s) => s.trim()).filter((s) => s);
-    onSubmit({
-      name: data.name,
-      code: data.code,
-      department: data.department,
-      lead: data.lead,
-      membersCount: list.length,
-      membersList: list,
-    });
-    reset();
+    onSubmit(data);
   };
+
+  const deptOptions = departments.map((d: any) => ({
+    value: d.id,
+    label: `${d.name} (${d.code})`,
+  }));
+
+  const employeeOptions = employees.map((emp: any) => ({
+    value: emp.id,
+    label: `${emp.name} (${emp.designation})`,
+  }));
 
   return (
     <Modal
-      title={<span style={{ fontWeight: 700, fontSize: "18px", color: "#1e293b" }}>{initialValues ? "Edit Team" : "Create Team"}</span>}
+      title={
+        <span style={{ fontWeight: 700, fontSize: "18px" }}>
+          {initialValues ? "Edit Team Details" : "Create New Team"}
+        </span>
+      }
       open={open}
       onCancel={onCancel}
       footer={null}
@@ -94,14 +105,14 @@ export const TeamFormModal: React.FC<TeamFormModalProps> = ({
           name="code"
           control={control}
           render={({ field, fieldState: { error } }) => (
-            <Form.Item label="Team Code" required validateStatus={error ? "error" : ""} help={error?.message}>
+            <Form.Item label="Team Code (Optional)" validateStatus={error ? "error" : ""} help={error?.message}>
               <Input {...field} placeholder="e.g. FE-TEAM" style={{ borderRadius: "6px", height: "40px" }} />
             </Form.Item>
           )}
         />
 
         <Controller
-          name="department"
+          name="departmentId"
           control={control}
           render={({ field, fieldState: { error } }) => (
             <Form.Item label="Department" required validateStatus={error ? "error" : ""} help={error?.message}>
@@ -109,33 +120,41 @@ export const TeamFormModal: React.FC<TeamFormModalProps> = ({
                 {...field}
                 placeholder="Select Department"
                 style={{ width: "100%", height: "40px" }}
-                options={[
-                  { value: "Engineering", label: "Engineering" },
-                  { value: "Product Management", label: "Product Management" },
-                  { value: "Marketing", label: "Marketing" },
-                  { value: "Human Resources", label: "Human Resources" },
-                ]}
+                options={deptOptions}
               />
             </Form.Item>
           )}
         />
 
         <Controller
-          name="lead"
+          name="teamLeadId"
           control={control}
           render={({ field, fieldState: { error } }) => (
-            <Form.Item label="Team Lead (Manager)" required validateStatus={error ? "error" : ""} help={error?.message}>
-              <Input {...field} placeholder="Assign manager name" style={{ borderRadius: "6px", height: "40px" }} />
+            <Form.Item label="Team Lead" validateStatus={error ? "error" : ""} help={error?.message}>
+              <Select
+                {...field}
+                placeholder="Assign Team Lead"
+                allowClear
+                style={{ width: "100%", height: "40px" }}
+                options={employeeOptions}
+              />
             </Form.Item>
           )}
         />
 
         <Controller
-          name="membersListString"
+          name="memberIds"
           control={control}
           render={({ field, fieldState: { error } }) => (
-            <Form.Item label="Team Members (comma separated)" required validateStatus={error ? "error" : ""} help={error?.message}>
-              <Input.TextArea {...field} placeholder="e.g. Alice, Bob, Charlie" style={{ borderRadius: "6px" }} rows={3} />
+            <Form.Item label="Team Members" validateStatus={error ? "error" : ""} help={error?.message}>
+              <Select
+                {...field}
+                mode="multiple"
+                placeholder="Assign members to team"
+                allowClear
+                style={{ width: "100%" }}
+                options={employeeOptions}
+              />
             </Form.Item>
           )}
         />

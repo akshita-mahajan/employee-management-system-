@@ -13,7 +13,7 @@ export const SalaryBreakdown: React.FC = () => {
         <Descriptions.Item label="House Rent Allowance (HRA)">40% of Basic Salary</Descriptions.Item>
         <Descriptions.Item label="Leave Travel Allowance (LTA)">10% of Basic Salary</Descriptions.Item>
         <Descriptions.Item label="Provident Fund (PF) Matching">12% of Basic + DA</Descriptions.Item>
-        <Descriptions.Item label="Medical Insurance Group coverage">Standard Corporate Plan ($500/yr)</Descriptions.Item>
+        <Descriptions.Item label="Medical Insurance Group coverage">Standard Corporate Plan (₹40,000/yr)</Descriptions.Item>
         <Descriptions.Item label="Bonus Metrics Eligibility">Performance Linked (Annual payout)</Descriptions.Item>
       </Descriptions>
     </Card>

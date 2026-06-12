@@ -57,11 +57,11 @@ export const PayslipViewer: React.FC<PayslipViewerProps> = ({
         <Divider style={{ margin: "20px 0" }} />
 
         <Descriptions title="Salary Breakdown" column={2} bordered size="small">
-          <Descriptions.Item label="Basic Salary">${payslip.earnings.basic.toLocaleString()}</Descriptions.Item>
-          <Descriptions.Item label="PF Contribution">${payslip.deductions.pf.toLocaleString()}</Descriptions.Item>
-          <Descriptions.Item label="House Rent Allowance (HRA)">${payslip.earnings.hra.toLocaleString()}</Descriptions.Item>
-          <Descriptions.Item label="Income Tax">${payslip.deductions.tax.toLocaleString()}</Descriptions.Item>
-          <Descriptions.Item label="Leave Travel Allowance (LTA)">${payslip.earnings.lta.toLocaleString()}</Descriptions.Item>
+          <Descriptions.Item label="Basic Salary">₹{payslip.earnings.basic.toLocaleString('en-IN')}</Descriptions.Item>
+          <Descriptions.Item label="PF Contribution">₹{payslip.deductions.pf.toLocaleString('en-IN')}</Descriptions.Item>
+          <Descriptions.Item label="House Rent Allowance (HRA)">₹{payslip.earnings.hra.toLocaleString('en-IN')}</Descriptions.Item>
+          <Descriptions.Item label="Income Tax">₹{payslip.deductions.tax.toLocaleString('en-IN')}</Descriptions.Item>
+          <Descriptions.Item label="Leave Travel Allowance (LTA)">₹{payslip.earnings.lta.toLocaleString('en-IN')}</Descriptions.Item>
           <Descriptions.Item label="--">--</Descriptions.Item>
         </Descriptions>
 
@@ -70,15 +70,15 @@ export const PayslipViewer: React.FC<PayslipViewerProps> = ({
         <div style={{ display: "flex", justifyContent: "space-between", background: "#f8fafc", padding: "16px", borderRadius: "8px" }}>
           <div>
             <div style={{ fontSize: "12px", color: "#64748b" }}>Total Gross Earnings</div>
-            <div style={{ fontSize: "16px", fontWeight: 600, color: "#334155" }}>${totalEarnings.toLocaleString()}</div>
+            <div style={{ fontSize: "16px", fontWeight: 600, color: "#334155" }}>₹{totalEarnings.toLocaleString('en-IN')}</div>
           </div>
           <div>
             <div style={{ fontSize: "12px", color: "#64748b" }}>Total Deductions</div>
-            <div style={{ fontSize: "16px", fontWeight: 600, color: "#ef4444" }}>${totalDeductions.toLocaleString()}</div>
+            <div style={{ fontSize: "16px", fontWeight: 600, color: "#ef4444" }}>₹{totalDeductions.toLocaleString('en-IN')}</div>
           </div>
           <div>
             <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>Net Take-Home Pay</div>
-            <div style={{ fontSize: "20px", fontWeight: 700, color: "#16a34a" }}>${netPay.toLocaleString()}</div>
+            <div style={{ fontSize: "20px", fontWeight: 700, color: "#16a34a" }}>₹{netPay.toLocaleString('en-IN')}</div>
           </div>
         </div>
       </div>

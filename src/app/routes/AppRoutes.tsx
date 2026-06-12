@@ -46,24 +46,44 @@ const AppRoutes = () => {
         <Route element={<DashboardLayout />}>
           <Route path={ROUTES.DASHBOARD} element={<DashboardPage />} />
 
-          {/* HR & Manager & Admin Level Routes */}
-          <Route element={<RoleGuard allowedRoles={[ROLES.ADMIN, ROLES.HR, ROLES.MANAGER]} />}>
+          {/* HR & Manager & Admin Level Routes for Workforce Management */}
+          <Route element={<RoleGuard allowedRoles={[ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.HR_ADMIN, ROLES.HR, ROLES.MANAGER, ROLES.AUDITOR]} />}>
             <Route element={<EmployeeLayout />}>
               <Route path={ROUTES.EMPLOYEES} element={<EmployeeDirectoryPage />} />
             </Route>
             <Route path={ROUTES.DEPARTMENTS} element={<DepartmentPage />} />
+          </Route>
+
+          {/* Teams is accessible to Team Leads as well */}
+          <Route element={<RoleGuard allowedRoles={[ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.HR_ADMIN, ROLES.HR, ROLES.MANAGER, ROLES.TEAM_LEAD, ROLES.AUDITOR]} />}>
             <Route path="/teams" element={<TeamPage />} />
           </Route>
 
           <Route path={ROUTES.EMPLOYEE_PROFILE} element={<EmployeeProfilePage />} />
-          <Route path={ROUTES.ATTENDANCE} element={<AttendancePage />} />
-          <Route path={ROUTES.LEAVES} element={<LeavePage />} />
-          <Route path={ROUTES.PAYROLL} element={<PayrollPage />} />
-          <Route path="/assets" element={<AssetPage />} />
-          <Route path="/reports" element={<ReportsPage />} />
+
+          {/* Time & Attendance - all except Payroll Admin */}
+          <Route element={<RoleGuard allowedRoles={[ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.HR_ADMIN, ROLES.HR, ROLES.MANAGER, ROLES.TEAM_LEAD, ROLES.EMPLOYEE, ROLES.INTERN, ROLES.AUDITOR]} />}>
+            <Route path={ROUTES.ATTENDANCE} element={<AttendancePage />} />
+            <Route path={ROUTES.LEAVES} element={<LeavePage />} />
+          </Route>
+
+          {/* Payroll - Admins, Payroll Admin, Employee, Intern, Auditor */}
+          <Route element={<RoleGuard allowedRoles={[ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.PAYROLL_ADMIN, ROLES.EMPLOYEE, ROLES.INTERN, ROLES.AUDITOR]} />}>
+            <Route path={ROUTES.PAYROLL} element={<PayrollPage />} />
+          </Route>
+
+          {/* Assets - Admins, HR, Auditor */}
+          <Route element={<RoleGuard allowedRoles={[ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.HR_ADMIN, ROLES.HR, ROLES.AUDITOR]} />}>
+            <Route path="/assets" element={<AssetPage />} />
+          </Route>
+
+          {/* Reports - Admins, HR, Manager, Auditor */}
+          <Route element={<RoleGuard allowedRoles={[ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.HR_ADMIN, ROLES.HR, ROLES.MANAGER, ROLES.AUDITOR]} />}>
+            <Route path="/reports" element={<ReportsPage />} />
+          </Route>
           
           {/* Admin Only settings */}
-          <Route element={<RoleGuard allowedRoles={[ROLES.ADMIN]} />}>
+          <Route element={<RoleGuard allowedRoles={[ROLES.SUPER_ADMIN, ROLES.ADMIN]} />}>
             <Route path={ROUTES.SETTINGS} element={<SettingsPage />} />
           </Route>
         </Route>

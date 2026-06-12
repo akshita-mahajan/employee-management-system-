@@ -3,6 +3,7 @@ import { Modal, Form, Input, DatePicker, Select, Button, Row, Col } from "antd";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import dayjs from "dayjs";
 
 const employeeFormSchema = z.object({
   employeeId: z.string().min(1, "Employee ID is required"),
@@ -25,13 +26,16 @@ interface AddEmployeeModalProps {
   open: boolean;
   onCancel: () => void;
   onSubmit: (values: EmployeeFormValues) => void;
+  initialValues?: any;
 }
 
 export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   open,
   onCancel,
   onSubmit,
+  initialValues,
 }) => {
+  const isEdit = !!initialValues;
   const { control, handleSubmit, reset } = useForm<EmployeeFormValues>({
     resolver: zodResolver(employeeFormSchema),
     defaultValues: {
@@ -42,20 +46,55 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       phone: "",
       department: "",
       designation: "",
-      role: "",
+      role: "EMPLOYEE",
       status: "ACTIVE",
       joiningDate: null,
     },
   });
 
+  React.useEffect(() => {
+    if (open) {
+      if (initialValues) {
+        reset({
+          employeeId: initialValues.employeeId || "",
+          firstName: initialValues.firstName || "",
+          lastName: initialValues.lastName || "",
+          email: initialValues.email || "",
+          phone: initialValues.phone || "",
+          department: initialValues.department || "",
+          designation: initialValues.designation || "",
+          role: initialValues.role || "EMPLOYEE",
+          status: initialValues.status || "ACTIVE",
+          joiningDate: initialValues.joiningDate ? dayjs(initialValues.joiningDate) : null,
+        });
+      } else {
+        reset({
+          employeeId: "",
+          firstName: "",
+          lastName: "",
+          email: "",
+          phone: "",
+          department: "",
+          designation: "",
+          role: "EMPLOYEE",
+          status: "ACTIVE",
+          joiningDate: null,
+        });
+      }
+    }
+  }, [open, initialValues, reset]);
+
   const handleFormSubmit = (data: EmployeeFormValues) => {
     onSubmit(data);
-    reset();
   };
 
   return (
     <Modal
-      title={<span style={{ fontWeight: 700, fontSize: "18px", color: "#1e293b" }}>Add New Employee</span>}
+      title={
+        <span style={{ fontWeight: 700, fontSize: "18px" }}>
+          {isEdit ? "Edit Employee Details" : "Add New Employee"}
+        </span>
+      }
       open={open}
       onCancel={onCancel}
       footer={null}
@@ -75,7 +114,12 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   validateStatus={error ? "error" : ""}
                   help={error?.message}
                 >
-                  <Input {...field} placeholder="e.g. EMP-101" style={{ borderRadius: "6px", height: "40px" }} />
+                  <Input 
+                    {...field} 
+                    placeholder="e.g. EMP-101" 
+                    disabled={isEdit} // Prevent changing ID in edit mode
+                    style={{ borderRadius: "6px", height: "40px" }} 
+                  />
                 </Form.Item>
               )}
             />
@@ -275,7 +319,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             Cancel
           </Button>
           <Button type="primary" htmlType="submit" style={{ borderRadius: "6px", height: "40px", backgroundColor: "#0061FF" }}>
-            Create Employee
+            {isEdit ? "Save Changes" : "Create Employee"}
           </Button>
         </div>
       </Form>

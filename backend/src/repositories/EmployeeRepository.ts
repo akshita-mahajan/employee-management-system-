@@ -34,7 +34,7 @@ export class EmployeeRepository extends BaseRepository<Employee> {
   }
 
   async findPaginated(options: PaginationOptions): Promise<PaginationResult<Employee>> {
-    const baseQuery = "SELECT id, employee_id, first_name, last_name, email, phone, designation, status, department_id, joining_date FROM employees";
+    const baseQuery = "SELECT id, employee_id, first_name, last_name, email, phone, designation, status, department_id, joining_date, deleted_at FROM employees";
     const searchableFields = ["first_name", "last_name", "email", "employee_id", "designation"];
     
     const { countQuery, dataQuery, params, page, limit } = buildPaginationQuery(
@@ -75,5 +75,38 @@ export class EmployeeRepository extends BaseRepository<Employee> {
     ];
     const res = await pool.query(queryStr, values);
     return res.rows[0];
+  }
+
+  async update(id: string, employee: Partial<Omit<Employee, "id" | "created_at" | "updated_at" | "deleted_at">>): Promise<Employee | null> {
+    const setClauses: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    for (const [key, val] of Object.entries(employee)) {
+      setClauses.push(`${key} = $${paramIndex}`);
+      values.push(val);
+      paramIndex++;
+    }
+
+    if (setClauses.length === 0) return this.findById(id);
+
+    values.push(id);
+    const queryStr = `
+      UPDATE employees 
+      SET ${setClauses.join(", ")}, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $${paramIndex} AND deleted_at IS NULL
+      RETURNING *
+    `;
+
+    const res = await pool.query(queryStr, values);
+    return res.rows[0] || null;
+  }
+
+  async restore(id: string): Promise<boolean> {
+    const res = await pool.query(
+      "UPDATE employees SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NOT NULL",
+      [id]
+    );
+    return (res.rowCount ?? 0) > 0;
   }
 }

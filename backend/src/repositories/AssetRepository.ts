@@ -20,7 +20,7 @@ export class AssetRepository extends BaseRepository<Asset> {
   }
 
   async findPaginated(options: PaginationOptions): Promise<PaginationResult<Asset>> {
-    const baseQuery = "SELECT id, category_id, name, code, status, value FROM assets";
+    const baseQuery = "SELECT id, category_id, name, code, status, value, deleted_at FROM assets";
     const searchableFields = ["name", "code", "status"];
     
     const { countQuery, dataQuery, params, page, limit } = buildPaginationQuery(

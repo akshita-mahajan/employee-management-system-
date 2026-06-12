@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { Layout, Input, Badge, Dropdown, Avatar, Button, Space } from "antd";
+import { Layout, Input, Badge, Dropdown, Avatar, Button, Space, theme } from "antd";
 import type { MenuProps } from "antd";
 import {
   MenuFoldOutlined,
@@ -10,6 +10,8 @@ import {
   UserOutlined,
   LogoutOutlined,
   SettingOutlined,
+  SunOutlined,
+  MoonOutlined,
 } from "@ant-design/icons";
 
 import { useUIStore } from "../../app/store/uiStore";
@@ -23,13 +25,18 @@ const { Header } = Layout;
 
 export const Navbar: React.FC = () => {
   const navigate = useNavigate();
-  const { sidebarCollapsed, toggleSidebar } = useUIStore();
+  const { sidebarCollapsed, toggleSidebar, themeMode, setThemeMode } = useUIStore();
   const { user, logout } = useAuthStore();
   const unreadCount = useNotificationStore((state) => state.getUnreadCount());
+  const { token } = theme.useToken();
 
   const handleLogout = () => {
     logout();
     navigate(ROUTES.LOGIN);
+  };
+
+  const toggleTheme = () => {
+    setThemeMode(themeMode === "light" ? "dark" : "light");
   };
 
   const userMenuItems: MenuProps["items"] = [
@@ -37,12 +44,12 @@ export const Navbar: React.FC = () => {
       key: "profile-header",
       label: (
         <div style={{ padding: "4px 8px" }}>
-          <div style={{ fontWeight: 600, color: "#1e293b" }}>{user?.name || "User Account"}</div>
-          <div style={{ fontSize: "12px", color: "#64748b" }}>{user?.email || "user@hrms.com"}</div>
+          <div style={{ fontWeight: 600, color: token.colorText }}>{user?.name || "User Account"}</div>
+          <div style={{ fontSize: "12px", color: token.colorTextSecondary }}>{user?.email || "user@hrms.com"}</div>
           <div
             style={{
               display: "inline-block",
-              background: "#eff6ff",
+              background: themeMode === "dark" ? "#1e293b" : "#eff6ff",
               color: "#0061FF",
               fontSize: "11px",
               fontWeight: 600,
@@ -79,12 +86,12 @@ export const Navbar: React.FC = () => {
     <Header
       style={{
         padding: "0 24px",
-        background: "#ffffff",
+        background: token.colorBgContainer,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
         height: "64px",
-        borderBottom: "1px solid #e2e8f0",
+        borderBottom: `1px solid ${token.colorBorderSecondary}`,
         position: "sticky",
         top: 0,
         zIndex: 99,
@@ -102,7 +109,7 @@ export const Navbar: React.FC = () => {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "#64748b",
+            color: token.colorTextSecondary,
           }}
         />
         <BreadcrumbSystem />
@@ -111,13 +118,30 @@ export const Navbar: React.FC = () => {
       <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
         {/* Search Input */}
         <Input
-          prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+          prefix={<SearchOutlined style={{ color: token.colorTextPlaceholder }} />}
           placeholder="Search employees, tasks, docs..."
           style={{
             width: "260px",
             borderRadius: "6px",
-            backgroundColor: "#f8fafc",
-            border: "1px solid #e2e8f0",
+            backgroundColor: themeMode === "dark" ? "#1f1f1f" : "#f8fafc",
+            border: `1px solid ${token.colorBorder}`,
+            color: token.colorText,
+          }}
+        />
+
+        {/* Theme Toggle Button */}
+        <Button
+          type="text"
+          icon={themeMode === "light" ? <MoonOutlined /> : <SunOutlined />}
+          onClick={toggleTheme}
+          style={{
+            fontSize: "18px",
+            color: token.colorTextSecondary,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "40px",
+            height: "40px",
           }}
         />
 
@@ -129,7 +153,7 @@ export const Navbar: React.FC = () => {
               icon={<BellOutlined />}
               style={{
                 fontSize: "20px",
-                color: "#64748b",
+                color: token.colorTextSecondary,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -148,10 +172,10 @@ export const Navbar: React.FC = () => {
               icon={<UserOutlined />}
             />
             <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-              <span style={{ fontSize: "14px", fontWeight: 600, color: "#334155" }}>
+              <span style={{ fontSize: "14px", fontWeight: 600, color: token.colorText }}>
                 {user?.name || "HR Professional"}
               </span>
-              <span style={{ fontSize: "11px", color: "#64748b" }}>
+              <span style={{ fontSize: "11px", color: token.colorTextSecondary }}>
                 {user?.role || "Admin"}
               </span>
             </div>

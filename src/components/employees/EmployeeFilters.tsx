@@ -12,6 +12,7 @@ interface EmployeeFiltersProps {
   setFilters: (filters: any) => void;
   viewMode: "table" | "card";
   setViewMode: (mode: "table" | "card") => void;
+  departments?: any[];
 }
 
 export const EmployeeFilters: React.FC<EmployeeFiltersProps> = ({
@@ -19,7 +20,17 @@ export const EmployeeFilters: React.FC<EmployeeFiltersProps> = ({
   setFilters,
   viewMode,
   setViewMode,
+  departments = [],
 }) => {
+  const deptOptions = departments.length > 0 
+    ? departments.map((d: any) => ({ value: d.id, label: d.name }))
+    : [
+        { value: "Engineering", label: "Engineering" },
+        { value: "Product Management", label: "Product Management" },
+        { value: "Marketing", label: "Marketing" },
+        { value: "Human Resources", label: "Human Resources" },
+      ];
+
   return (
     <Row gutter={[16, 16]} style={{ marginBottom: "20px" }} align="middle">
       <Col xs={24} md={8}>
@@ -38,12 +49,7 @@ export const EmployeeFilters: React.FC<EmployeeFiltersProps> = ({
           onChange={(val) => setFilters({ ...filters, department: val || "" })}
           style={{ width: "100%", height: "40px" }}
           allowClear
-          options={[
-            { value: "Engineering", label: "Engineering" },
-            { value: "Product Management", label: "Product Management" },
-            { value: "Marketing", label: "Marketing" },
-            { value: "Human Resources", label: "Human Resources" },
-          ]}
+          options={deptOptions}
         />
       </Col>
       <Col xs={12} sm={8} md={4}>

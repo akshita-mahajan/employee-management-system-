@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 interface UIState {
   sidebarCollapsed: boolean;
@@ -9,11 +10,18 @@ interface UIState {
   setThemeMode: (mode: "light" | "dark") => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
-  sidebarCollapsed: false,
-  themeMode: "light",
+export const useUIStore = create<UIState>()(
+  persist(
+    (set) => ({
+      sidebarCollapsed: false,
+      themeMode: "light",
 
-  toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
-  setThemeMode: (mode) => set({ themeMode: mode }),
-}));
+      toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+      setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+      setThemeMode: (mode) => set({ themeMode: mode }),
+    }),
+    {
+      name: "hrms-ui-storage",
+    }
+  )
+);

@@ -9,10 +9,10 @@ import { PayrollTable } from "../../components/payroll/PayrollTable";
 import type { PayrollRecord } from "../../components/payroll/PayrollTable";
 
 const mockPayrollHistory: PayrollRecord[] = [
-  { id: "1", month: "May 2026", totalPayout: "$425,000", status: "PROCESSED", employeeCount: 1248 },
-  { id: "2", month: "April 2026", totalPayout: "$424,500", status: "PROCESSED", employeeCount: 1245 },
-  { id: "3", month: "March 2026", totalPayout: "$418,000", status: "PROCESSED", employeeCount: 1240 },
-  { id: "4", month: "June 2026 (Draft)", totalPayout: "$426,800", status: "PENDING", employeeCount: 1252 },
+  { id: "1", month: "May 2026", totalPayout: "₹42,50,000", status: "PROCESSED", employeeCount: 1248 },
+  { id: "2", month: "April 2026", totalPayout: "₹42,45,000", status: "PROCESSED", employeeCount: 1245 },
+  { id: "3", month: "March 2026", totalPayout: "₹41,80,000", status: "PROCESSED", employeeCount: 1240 },
+  { id: "4", month: "June 2026 (Draft)", totalPayout: "₹42,68,000", status: "PENDING", employeeCount: 1252 },
 ];
 
 const PayrollPage: React.FC = () => {
@@ -39,13 +39,13 @@ const PayrollPage: React.FC = () => {
       designation: "Lead HR Specialist",
       department: "Human Resources",
       earnings: {
-        basic: 8500,
-        hra: 3400,
-        lta: 850,
+        basic: 85000,
+        hra: 34000,
+        lta: 8500,
       },
       deductions: {
-        pf: 1020,
-        tax: 430,
+        pf: 10200,
+        tax: 4300,
       },
     });
     setViewerOpen(true);
@@ -91,9 +91,9 @@ const PayrollPage: React.FC = () => {
 
       {/* KPI Section */}
       <PayrollStats
-        totalPayout="$425,000"
-        avgCTC="$116,400 / yr"
-        totalDeductions="$45,500"
+        totalPayout="₹42,50,000"
+        avgCTC="₹11,64,000 / yr"
+        totalDeductions="₹4,55,000"
       />
 
       <Tabs defaultActiveKey="history" items={tabItems} style={{ background: "#ffffff", padding: "16px", borderRadius: "12px", border: "1px solid #e2e8f0" }} />

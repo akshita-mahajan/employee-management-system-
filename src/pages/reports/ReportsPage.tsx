@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Tabs, Row, Col, Space, Button, notification, Select, Card, Statistic, Modal, Form, Input } from "antd";
-import { DownloadOutlined, PlusOutlined, UserOutlined, WalletOutlined, CalendarOutlined } from "@ant-design/icons";
+import { PlusOutlined, UserOutlined, WalletOutlined, CalendarOutlined } from "@ant-design/icons";
 
 import { AnalyticsDashboard } from "../../components/reports/AnalyticsDashboard";
 import { ReportsTable } from "../../components/reports/ReportsTable";
@@ -35,9 +35,9 @@ const ReportsPage: React.FC = () => {
   const { data: teams = [] } = useTeams();
 
   const { data: dashboardData, isLoading: dashboardLoading, refetch: refetchDashboard } = useReportDashboard();
-  const { data: employeeData, isLoading: empLoading, refetch: refetchEmployees } = useReportEmployees(filterParams);
-  const { data: payrollData, isLoading: payLoading, refetch: refetchPayroll } = useReportPayroll(filterParams);
-  const { data: attendanceData, isLoading: attLoading, refetch: refetchAttendance } = useReportAttendance(filterParams);
+  const { data: employeeData, isLoading: empLoading } = useReportEmployees(filterParams);
+  const { data: payrollData, isLoading: payLoading } = useReportPayroll(filterParams);
+  const { data: attendanceData, isLoading: attLoading } = useReportAttendance(filterParams);
 
   const generateReportMutation = useGenerateReport();
 

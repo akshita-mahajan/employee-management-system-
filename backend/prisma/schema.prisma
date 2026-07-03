@@ -1,0 +1,599 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model asset_assignments {
+  id                                        String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  asset_id                                  String?    @db.Uuid
+  employee_id                               String?    @db.Uuid
+  assigned_date                             DateTime?  @default(now()) @db.Timestamptz(6)
+  returned_date                             DateTime?  @db.Timestamptz(6)
+  notes                                     String?
+  created_at                                DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at                                DateTime?  @default(now()) @db.Timestamptz(6)
+  deleted_at                                DateTime?  @db.Timestamptz(6)
+  created_by                                String?    @db.Uuid
+  updated_by                                String?    @db.Uuid
+  assets                                    assets?    @relation(fields: [asset_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_asset_assignments_created_byTousers users?     @relation("asset_assignments_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees                                 employees? @relation(fields: [employee_id], references: [id], onUpdate: NoAction)
+  users_asset_assignments_updated_byTousers users?     @relation("asset_assignments_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([asset_id], map: "idx_asset_assignments_asset", where: raw("(deleted_at IS NULL)"))
+}
+
+model asset_categories {
+  id                                       String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                                     String           @unique @db.VarChar(50)
+  description                              String?
+  created_at                               DateTime?        @default(now()) @db.Timestamptz(6)
+  updated_at                               DateTime?        @default(now()) @db.Timestamptz(6)
+  deleted_at                               DateTime?        @db.Timestamptz(6)
+  created_by                               String?          @db.Uuid
+  updated_by                               String?          @db.Uuid
+  users_asset_categories_created_byTousers users?           @relation("asset_categories_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_asset_categories_updated_byTousers users?           @relation("asset_categories_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  asset_requests                           asset_requests[]
+  assets                                   assets[]
+}
+
+model asset_history {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  asset_id   String?   @db.Uuid
+  action     String    @db.VarChar(100)
+  details    String?
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  created_by String?   @db.Uuid
+  assets     assets?   @relation(fields: [asset_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users?    @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model asset_maintenance {
+  id                                        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  asset_id                                  String?   @db.Uuid
+  maintenance_type                          String    @db.VarChar(100)
+  cost                                      Decimal?  @default(0.00) @db.Decimal(10, 2)
+  start_date                                DateTime  @db.Date
+  end_date                                  DateTime? @db.Date
+  details                                   String?
+  created_at                                DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at                                DateTime? @default(now()) @db.Timestamptz(6)
+  deleted_at                                DateTime? @db.Timestamptz(6)
+  created_by                                String?   @db.Uuid
+  updated_by                                String?   @db.Uuid
+  assets                                    assets?   @relation(fields: [asset_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_asset_maintenance_created_byTousers users?    @relation("asset_maintenance_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_asset_maintenance_updated_byTousers users?    @relation("asset_maintenance_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model asset_requests {
+  id                                     String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employee_id                            String?           @db.Uuid
+  category_id                            String?           @db.Uuid
+  reason                                 String?
+  status                                 String?           @default("PENDING") @db.VarChar(20)
+  created_at                             DateTime?         @default(now()) @db.Timestamptz(6)
+  updated_at                             DateTime?         @default(now()) @db.Timestamptz(6)
+  deleted_at                             DateTime?         @db.Timestamptz(6)
+  created_by                             String?           @db.Uuid
+  updated_by                             String?           @db.Uuid
+  asset_categories                       asset_categories? @relation(fields: [category_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_asset_requests_created_byTousers users?            @relation("asset_requests_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees                              employees?        @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_asset_requests_updated_byTousers users?            @relation("asset_requests_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model assets {
+  id                             String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  category_id                    String?             @db.Uuid
+  name                           String              @db.VarChar(100)
+  code                           String              @unique @db.VarChar(100)
+  status                         String?             @default("Available") @db.VarChar(20)
+  value                          Decimal?            @default(0.00) @db.Decimal(10, 2)
+  created_at                     DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at                     DateTime?           @default(now()) @db.Timestamptz(6)
+  deleted_at                     DateTime?           @db.Timestamptz(6)
+  created_by                     String?             @db.Uuid
+  updated_by                     String?             @db.Uuid
+  asset_assignments              asset_assignments[]
+  asset_history                  asset_history[]
+  asset_maintenance              asset_maintenance[]
+  asset_categories               asset_categories?   @relation(fields: [category_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_assets_created_byTousers users?              @relation("assets_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_assets_updated_byTousers users?              @relation("assets_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([category_id], map: "idx_assets_category", where: raw("(deleted_at IS NULL)"))
+  @@index([status], map: "idx_assets_status", where: raw("(deleted_at IS NULL)"))
+}
+
+model attendance {
+  id                                 String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employee_id                        String?           @db.Uuid
+  date                               DateTime          @db.Date
+  status                             String?           @default("PRESENT") @db.VarChar(20)
+  created_at                         DateTime?         @default(now()) @db.Timestamptz(6)
+  updated_at                         DateTime?         @default(now()) @db.Timestamptz(6)
+  deleted_at                         DateTime?         @db.Timestamptz(6)
+  created_by                         String?           @db.Uuid
+  updated_by                         String?           @db.Uuid
+  users_attendance_created_byTousers users?            @relation("attendance_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees                          employees?        @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_attendance_updated_byTousers users?            @relation("attendance_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  attendance_logs                    attendance_logs[]
+
+  @@unique([employee_id, date], map: "unique_emp_date")
+  @@index([date], map: "idx_attendance_date", where: raw("(deleted_at IS NULL)"))
+  @@index([employee_id, date], map: "idx_attendance_emp_date", where: raw("(deleted_at IS NULL)"))
+}
+
+model attendance_logs {
+  id            String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  attendance_id String?     @db.Uuid
+  check_in      DateTime    @db.Timestamptz(6)
+  check_out     DateTime?   @db.Timestamptz(6)
+  overtime_mins Int?        @default(0)
+  is_late       Boolean?    @default(false)
+  created_at    DateTime?   @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime?   @default(now()) @db.Timestamptz(6)
+  attendance    attendance? @relation(fields: [attendance_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([attendance_id], map: "idx_attendance_logs_att")
+}
+
+model attendance_policies {
+  id                                          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                                        String    @db.VarChar(100)
+  standard_hours                              Decimal?  @default(8.00) @db.Decimal(4, 2)
+  grace_period_mins                           Int?      @default(15)
+  created_at                                  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at                                  DateTime? @default(now()) @db.Timestamptz(6)
+  deleted_at                                  DateTime? @db.Timestamptz(6)
+  created_by                                  String?   @db.Uuid
+  updated_by                                  String?   @db.Uuid
+  users_attendance_policies_created_byTousers users?    @relation("attendance_policies_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_attendance_policies_updated_byTousers users?    @relation("attendance_policies_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model audit_logs {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id    String?   @db.Uuid
+  action     String    @db.VarChar(100)
+  module     String    @db.VarChar(100)
+  old_values Json?
+  new_values Json?
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  users      users?    @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([action, created_at], map: "idx_audit_logs_action")
+}
+
+model company_settings {
+  id                                       String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  company_name                             String    @db.VarChar(150)
+  domain                                   String?   @db.VarChar(100)
+  timezone                                 String?   @default("UTC") @db.VarChar(50)
+  created_at                               DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at                               DateTime? @default(now()) @db.Timestamptz(6)
+  deleted_at                               DateTime? @db.Timestamptz(6)
+  created_by                               String?   @db.Uuid
+  updated_by                               String?   @db.Uuid
+  users_company_settings_created_byTousers users?    @relation("company_settings_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_company_settings_updated_byTousers users?    @relation("company_settings_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model departments {
+  id                                             String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                                           String      @db.VarChar(100)
+  code                                           String      @unique @db.VarChar(10)
+  description                                    String?
+  manager_id                                     String?     @db.Uuid
+  budget                                         Decimal?    @default(0.00) @db.Decimal(15, 2)
+  created_at                                     DateTime?   @default(now()) @db.Timestamptz(6)
+  updated_at                                     DateTime?   @default(now()) @db.Timestamptz(6)
+  deleted_at                                     DateTime?   @db.Timestamptz(6)
+  created_by                                     String?     @db.Uuid
+  updated_by                                     String?     @db.Uuid
+  users_departments_created_byTousers            users?      @relation("departments_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_departments_updated_byTousers            users?      @relation("departments_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees_departments_manager_idToemployees    employees?  @relation("departments_manager_idToemployees", fields: [manager_id], references: [id], onUpdate: NoAction, map: "fk_departments_manager")
+  employees_employees_department_idTodepartments employees[] @relation("employees_department_idTodepartments")
+  teams                                          teams[]
+}
+
+model emergency_contacts {
+  id                                         String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employee_id                                String?    @db.Uuid
+  name                                       String     @db.VarChar(100)
+  relationship                               String     @db.VarChar(50)
+  phone                                      String     @db.VarChar(20)
+  created_at                                 DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at                                 DateTime?  @default(now()) @db.Timestamptz(6)
+  deleted_at                                 DateTime?  @db.Timestamptz(6)
+  created_by                                 String?    @db.Uuid
+  updated_by                                 String?    @db.Uuid
+  users_emergency_contacts_created_byTousers users?     @relation("emergency_contacts_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees                                  employees? @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_emergency_contacts_updated_byTousers users?     @relation("emergency_contacts_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model employee_documents {
+  id                                         String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employee_id                                String?    @db.Uuid
+  name                                       String     @db.VarChar(150)
+  file_path                                  String     @db.VarChar(255)
+  category                                   String     @db.VarChar(50)
+  created_at                                 DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at                                 DateTime?  @default(now()) @db.Timestamptz(6)
+  deleted_at                                 DateTime?  @db.Timestamptz(6)
+  created_by                                 String?    @db.Uuid
+  updated_by                                 String?    @db.Uuid
+  users_employee_documents_created_byTousers users?     @relation("employee_documents_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees                                  employees? @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_employee_documents_updated_byTousers users?     @relation("employee_documents_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model employee_skills {
+  id                                      String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employee_id                             String?    @db.Uuid
+  skill_name                              String     @db.VarChar(100)
+  proficiency_level                       String     @db.VarChar(20)
+  created_at                              DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at                              DateTime?  @default(now()) @db.Timestamptz(6)
+  deleted_at                              DateTime?  @db.Timestamptz(6)
+  created_by                              String?    @db.Uuid
+  updated_by                              String?    @db.Uuid
+  users_employee_skills_created_byTousers users?     @relation("employee_skills_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees                               employees? @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_employee_skills_updated_byTousers users?     @relation("employee_skills_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([employee_id, skill_name], map: "unique_emp_skill")
+}
+
+model employees {
+  id                                                   String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                                              String?              @db.Uuid
+  employee_id                                          String               @unique @db.VarChar(30)
+  first_name                                           String               @db.VarChar(50)
+  last_name                                            String               @db.VarChar(50)
+  email                                                String               @unique @db.VarChar(100)
+  phone                                                String?              @db.VarChar(20)
+  department_id                                        String?              @db.Uuid
+  designation                                          String               @db.VarChar(100)
+  joining_date                                         DateTime             @db.Date
+  status                                               String?              @default("ACTIVE") @db.VarChar(20)
+  reporting_manager_id                                 String?              @db.Uuid
+  created_at                                           DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at                                           DateTime?            @default(now()) @db.Timestamptz(6)
+  deleted_at                                           DateTime?            @db.Timestamptz(6)
+  created_by                                           String?              @db.Uuid
+  updated_by                                           String?              @db.Uuid
+  asset_assignments                                    asset_assignments[]
+  asset_requests                                       asset_requests[]
+  attendance                                           attendance[]
+  departments_departments_manager_idToemployees        departments[]        @relation("departments_manager_idToemployees")
+  emergency_contacts                                   emergency_contacts[]
+  employee_documents                                   employee_documents[]
+  employee_skills                                      employee_skills[]
+  users_employees_created_byTousers                    users?               @relation("employees_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  departments_employees_department_idTodepartments     departments?         @relation("employees_department_idTodepartments", fields: [department_id], references: [id], onUpdate: NoAction)
+  employees                                            employees?           @relation("employeesToemployees", fields: [reporting_manager_id], references: [id], onUpdate: NoAction)
+  other_employees                                      employees[]          @relation("employeesToemployees")
+  users_employees_updated_byTousers                    users?               @relation("employees_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_employees_user_idTousers                       users?               @relation("employees_user_idTousers", fields: [user_id], references: [id], onUpdate: NoAction)
+  leave_balances                                       leave_balances[]
+  leave_requests_leave_requests_approved_byToemployees leave_requests[]     @relation("leave_requests_approved_byToemployees")
+  leave_requests_leave_requests_employee_idToemployees leave_requests[]     @relation("leave_requests_employee_idToemployees")
+  payslips                                             payslips[]
+  salary_structures                                    salary_structures[]
+  team_members                                         team_members[]
+  teams                                                teams[]
+
+  @@index([department_id], map: "idx_employees_dept", where: raw("(deleted_at IS NULL)"))
+  @@index([status], map: "idx_employees_status", where: raw("(deleted_at IS NULL)"))
+}
+
+model leave_balances {
+  id                                     String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employee_id                            String?      @db.Uuid
+  leave_type_id                          String?      @db.Uuid
+  allocated                              Decimal      @db.Decimal(5, 1)
+  used                                   Decimal?     @default(0.0) @db.Decimal(5, 1)
+  created_at                             DateTime?    @default(now()) @db.Timestamptz(6)
+  updated_at                             DateTime?    @default(now()) @db.Timestamptz(6)
+  deleted_at                             DateTime?    @db.Timestamptz(6)
+  created_by                             String?      @db.Uuid
+  updated_by                             String?      @db.Uuid
+  users_leave_balances_created_byTousers users?       @relation("leave_balances_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees                              employees?   @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  leave_types                            leave_types? @relation(fields: [leave_type_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_leave_balances_updated_byTousers users?       @relation("leave_balances_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([employee_id, leave_type_id], map: "unique_emp_leave")
+}
+
+model leave_requests {
+  id                                              String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employee_id                                     String?      @db.Uuid
+  leave_type_id                                   String?      @db.Uuid
+  start_date                                      DateTime     @db.Date
+  end_date                                        DateTime     @db.Date
+  reason                                          String?
+  status                                          String?      @default("PENDING") @db.VarChar(20)
+  approved_by                                     String?      @db.Uuid
+  created_at                                      DateTime?    @default(now()) @db.Timestamptz(6)
+  updated_at                                      DateTime?    @default(now()) @db.Timestamptz(6)
+  deleted_at                                      DateTime?    @db.Timestamptz(6)
+  created_by                                      String?      @db.Uuid
+  updated_by                                      String?      @db.Uuid
+  employees_leave_requests_approved_byToemployees employees?   @relation("leave_requests_approved_byToemployees", fields: [approved_by], references: [id], onUpdate: NoAction)
+  users_leave_requests_created_byTousers          users?       @relation("leave_requests_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees_leave_requests_employee_idToemployees employees?   @relation("leave_requests_employee_idToemployees", fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  leave_types                                     leave_types? @relation(fields: [leave_type_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_leave_requests_updated_byTousers          users?       @relation("leave_requests_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([employee_id, status], map: "idx_leave_requests_emp", where: raw("(deleted_at IS NULL)"))
+}
+
+model leave_types {
+  id                                  String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                                String           @unique @db.VarChar(50)
+  allowance_days                      Int
+  created_at                          DateTime?        @default(now()) @db.Timestamptz(6)
+  updated_at                          DateTime?        @default(now()) @db.Timestamptz(6)
+  deleted_at                          DateTime?        @db.Timestamptz(6)
+  created_by                          String?          @db.Uuid
+  updated_by                          String?          @db.Uuid
+  leave_balances                      leave_balances[]
+  leave_requests                      leave_requests[]
+  users_leave_types_created_byTousers users?           @relation("leave_types_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_leave_types_updated_byTousers users?           @relation("leave_types_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model notification_reads {
+  notification_id String        @db.Uuid
+  user_id         String        @db.Uuid
+  is_read         Boolean?      @default(false)
+  read_at         DateTime?     @db.Timestamptz(6)
+  notifications   notifications @relation(fields: [notification_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([notification_id, user_id])
+  @@index([user_id, is_read], map: "idx_notification_reads_user")
+}
+
+model notifications {
+  id                 String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  title              String               @db.VarChar(150)
+  message            String
+  category           String               @db.VarChar(30)
+  created_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  created_by         String?              @db.Uuid
+  notification_reads notification_reads[]
+}
+
+model payroll_components {
+  id                                         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  payslip_id                                 String?   @db.Uuid
+  name                                       String    @db.VarChar(100)
+  type                                       String    @db.VarChar(20)
+  amount                                     Decimal   @db.Decimal(12, 2)
+  created_at                                 DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at                                 DateTime? @default(now()) @db.Timestamptz(6)
+  deleted_at                                 DateTime? @db.Timestamptz(6)
+  created_by                                 String?   @db.Uuid
+  updated_by                                 String?   @db.Uuid
+  users_payroll_components_created_byTousers users?    @relation("payroll_components_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payslips                                   payslips? @relation(fields: [payslip_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_payroll_components_updated_byTousers users?    @relation("payroll_components_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model payroll_runs {
+  id                                   String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  billing_month                        String     @db.VarChar(20)
+  status                               String?    @default("PENDING") @db.VarChar(20)
+  total_payout                         Decimal?   @default(0.00) @db.Decimal(15, 2)
+  created_at                           DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at                           DateTime?  @default(now()) @db.Timestamptz(6)
+  deleted_at                           DateTime?  @db.Timestamptz(6)
+  created_by                           String?    @db.Uuid
+  updated_by                           String?    @db.Uuid
+  users_payroll_runs_created_byTousers users?     @relation("payroll_runs_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_payroll_runs_updated_byTousers users?     @relation("payroll_runs_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payslips                             payslips[]
+}
+
+model payslips {
+  id                               String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  payroll_run_id                   String?              @db.Uuid
+  employee_id                      String?              @db.Uuid
+  net_pay                          Decimal              @db.Decimal(12, 2)
+  created_at                       DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at                       DateTime?            @default(now()) @db.Timestamptz(6)
+  deleted_at                       DateTime?            @db.Timestamptz(6)
+  created_by                       String?              @db.Uuid
+  updated_by                       String?              @db.Uuid
+  payroll_components               payroll_components[]
+  users_payslips_created_byTousers users?               @relation("payslips_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees                        employees?           @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  payroll_runs                     payroll_runs?        @relation(fields: [payroll_run_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_payslips_updated_byTousers users?               @relation("payslips_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([payroll_run_id], map: "idx_payslips_run", where: raw("(deleted_at IS NULL)"))
+}
+
+model permissions {
+  id               String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name             String             @unique @db.VarChar(100)
+  description      String?
+  created_at       DateTime?          @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?          @default(now()) @db.Timestamptz(6)
+  deleted_at       DateTime?          @db.Timestamptz(6)
+  created_by       String?            @db.Uuid
+  updated_by       String?            @db.Uuid
+  role_permissions role_permissions[]
+}
+
+model refresh_tokens {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id    String?   @db.Uuid
+  token      String    @unique @db.VarChar(255)
+  expires_at DateTime  @db.Timestamptz(6)
+  is_revoked Boolean?  @default(false)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  users      users?    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model report_exports {
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String    @db.VarChar(150)
+  category    String    @db.VarChar(50)
+  file_path   String    @db.VarChar(255)
+  file_format String    @db.VarChar(10)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  created_by  String?   @db.Uuid
+  users       users?    @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model role_permissions {
+  role_id       String      @db.Uuid
+  permission_id String      @db.Uuid
+  permissions   permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  roles         roles       @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([role_id, permission_id])
+}
+
+model roles {
+  id               String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name             String             @unique @db.VarChar(50)
+  description      String?
+  created_at       DateTime?          @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?          @default(now()) @db.Timestamptz(6)
+  deleted_at       DateTime?          @db.Timestamptz(6)
+  created_by       String?            @db.Uuid
+  updated_by       String?            @db.Uuid
+  role_permissions role_permissions[]
+  user_roles       user_roles[]
+}
+
+model salary_structures {
+  id                                        String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  employee_id                               String?    @db.Uuid
+  base_salary                               Decimal    @db.Decimal(12, 2)
+  hra                                       Decimal?   @default(0.00) @db.Decimal(12, 2)
+  lta                                       Decimal?   @default(0.00) @db.Decimal(12, 2)
+  created_at                                DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at                                DateTime?  @default(now()) @db.Timestamptz(6)
+  deleted_at                                DateTime?  @db.Timestamptz(6)
+  created_by                                String?    @db.Uuid
+  updated_by                                String?    @db.Uuid
+  users_salary_structures_created_byTousers users?     @relation("salary_structures_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees                                 employees? @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_salary_structures_updated_byTousers users?     @relation("salary_structures_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model team_members {
+  team_id     String    @db.Uuid
+  employee_id String    @db.Uuid
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  created_by  String?   @db.Uuid
+  users       users?    @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees   employees @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  teams       teams     @relation(fields: [team_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([team_id, employee_id])
+}
+
+model teams {
+  id                            String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                          String         @db.VarChar(100)
+  code                          String         @unique @db.VarChar(20)
+  department_id                 String?        @db.Uuid
+  team_lead_id                  String?        @db.Uuid
+  created_at                    DateTime?      @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime?      @default(now()) @db.Timestamptz(6)
+  deleted_at                    DateTime?      @db.Timestamptz(6)
+  created_by                    String?        @db.Uuid
+  updated_by                    String?        @db.Uuid
+  team_members                  team_members[]
+  users_teams_created_byTousers users?         @relation("teams_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  departments                   departments?   @relation(fields: [department_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  employees                     employees?     @relation(fields: [team_lead_id], references: [id], onUpdate: NoAction)
+  users_teams_updated_byTousers users?         @relation("teams_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model user_roles {
+  user_id String @db.Uuid
+  role_id String @db.Uuid
+  roles   roles  @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users   users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, role_id])
+}
+
+model users {
+  id                                                        String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email                                                     String                @unique @db.VarChar(100)
+  password_hash                                             String                @db.VarChar(255)
+  is_active                                                 Boolean?              @default(true)
+  created_at                                                DateTime?             @default(now()) @db.Timestamptz(6)
+  updated_at                                                DateTime?             @default(now()) @db.Timestamptz(6)
+  deleted_at                                                DateTime?             @db.Timestamptz(6)
+  created_by                                                String?               @db.Uuid
+  updated_by                                                String?               @db.Uuid
+  asset_assignments_asset_assignments_created_byTousers     asset_assignments[]   @relation("asset_assignments_created_byTousers")
+  asset_assignments_asset_assignments_updated_byTousers     asset_assignments[]   @relation("asset_assignments_updated_byTousers")
+  asset_categories_asset_categories_created_byTousers       asset_categories[]    @relation("asset_categories_created_byTousers")
+  asset_categories_asset_categories_updated_byTousers       asset_categories[]    @relation("asset_categories_updated_byTousers")
+  asset_history                                             asset_history[]
+  asset_maintenance_asset_maintenance_created_byTousers     asset_maintenance[]   @relation("asset_maintenance_created_byTousers")
+  asset_maintenance_asset_maintenance_updated_byTousers     asset_maintenance[]   @relation("asset_maintenance_updated_byTousers")
+  asset_requests_asset_requests_created_byTousers           asset_requests[]      @relation("asset_requests_created_byTousers")
+  asset_requests_asset_requests_updated_byTousers           asset_requests[]      @relation("asset_requests_updated_byTousers")
+  assets_assets_created_byTousers                           assets[]              @relation("assets_created_byTousers")
+  assets_assets_updated_byTousers                           assets[]              @relation("assets_updated_byTousers")
+  attendance_attendance_created_byTousers                   attendance[]          @relation("attendance_created_byTousers")
+  attendance_attendance_updated_byTousers                   attendance[]          @relation("attendance_updated_byTousers")
+  attendance_policies_attendance_policies_created_byTousers attendance_policies[] @relation("attendance_policies_created_byTousers")
+  attendance_policies_attendance_policies_updated_byTousers attendance_policies[] @relation("attendance_policies_updated_byTousers")
+  audit_logs                                                audit_logs[]
+  company_settings_company_settings_created_byTousers       company_settings[]    @relation("company_settings_created_byTousers")
+  company_settings_company_settings_updated_byTousers       company_settings[]    @relation("company_settings_updated_byTousers")
+  departments_departments_created_byTousers                 departments[]         @relation("departments_created_byTousers")
+  departments_departments_updated_byTousers                 departments[]         @relation("departments_updated_byTousers")
+  emergency_contacts_emergency_contacts_created_byTousers   emergency_contacts[]  @relation("emergency_contacts_created_byTousers")
+  emergency_contacts_emergency_contacts_updated_byTousers   emergency_contacts[]  @relation("emergency_contacts_updated_byTousers")
+  employee_documents_employee_documents_created_byTousers   employee_documents[]  @relation("employee_documents_created_byTousers")
+  employee_documents_employee_documents_updated_byTousers   employee_documents[]  @relation("employee_documents_updated_byTousers")
+  employee_skills_employee_skills_created_byTousers         employee_skills[]     @relation("employee_skills_created_byTousers")
+  employee_skills_employee_skills_updated_byTousers         employee_skills[]     @relation("employee_skills_updated_byTousers")
+  employees_employees_created_byTousers                     employees[]           @relation("employees_created_byTousers")
+  employees_employees_updated_byTousers                     employees[]           @relation("employees_updated_byTousers")
+  employees_employees_user_idTousers                        employees[]           @relation("employees_user_idTousers")
+  leave_balances_leave_balances_created_byTousers           leave_balances[]      @relation("leave_balances_created_byTousers")
+  leave_balances_leave_balances_updated_byTousers           leave_balances[]      @relation("leave_balances_updated_byTousers")
+  leave_requests_leave_requests_created_byTousers           leave_requests[]      @relation("leave_requests_created_byTousers")
+  leave_requests_leave_requests_updated_byTousers           leave_requests[]      @relation("leave_requests_updated_byTousers")
+  leave_types_leave_types_created_byTousers                 leave_types[]         @relation("leave_types_created_byTousers")
+  leave_types_leave_types_updated_byTousers                 leave_types[]         @relation("leave_types_updated_byTousers")
+  notification_reads                                        notification_reads[]
+  payroll_components_payroll_components_created_byTousers   payroll_components[]  @relation("payroll_components_created_byTousers")
+  payroll_components_payroll_components_updated_byTousers   payroll_components[]  @relation("payroll_components_updated_byTousers")
+  payroll_runs_payroll_runs_created_byTousers               payroll_runs[]        @relation("payroll_runs_created_byTousers")
+  payroll_runs_payroll_runs_updated_byTousers               payroll_runs[]        @relation("payroll_runs_updated_byTousers")
+  payslips_payslips_created_byTousers                       payslips[]            @relation("payslips_created_byTousers")
+  payslips_payslips_updated_byTousers                       payslips[]            @relation("payslips_updated_byTousers")
+  refresh_tokens                                            refresh_tokens[]
+  report_exports                                            report_exports[]
+  salary_structures_salary_structures_created_byTousers     salary_structures[]   @relation("salary_structures_created_byTousers")
+  salary_structures_salary_structures_updated_byTousers     salary_structures[]   @relation("salary_structures_updated_byTousers")
+  team_members                                              team_members[]
+  teams_teams_created_byTousers                             teams[]               @relation("teams_created_byTousers")
+  teams_teams_updated_byTousers                             teams[]               @relation("teams_updated_byTousers")
+  user_roles                                                user_roles[]
+}

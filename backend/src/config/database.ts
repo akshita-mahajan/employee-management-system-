@@ -1,37 +1,41 @@
-import { Pool } from "pg";
-import * as dotenv from "dotenv";
-import path from "path";
+import { prisma } from "../lib/prisma.js";
 
-// Load environment variables from backend/.env file
-const envPath = path.join(__dirname, "../../.env");
-dotenv.config({ path: envPath });
-console.log(`[DB Pool Setup] Parameters: Host=${process.env.DB_HOST}, Port=${process.env.DB_PORT}, DB=${process.env.DB_NAME}, User=${process.env.DB_USER}, PwdLength=${process.env.DB_PASSWORD ? process.env.DB_PASSWORD.length : 0}`);
+export const query = async (text: string, params: any[] = []) => {
+  const isWriteQuery =
+    text.trim().toUpperCase().startsWith("INSERT") ||
+    text.trim().toUpperCase().startsWith("UPDATE") ||
+    text.trim().toUpperCase().startsWith("DELETE") ||
+    text.trim().toUpperCase().startsWith("ALTER");
 
-const isProduction = process.env.NODE_ENV === "production" || (process.env.DB_HOST && !process.env.DB_HOST.includes("localhost"));
+  const normalizedParams = params || [];
 
-const pool = new Pool({
-  host: process.env.DB_HOST || "localhost",
-  port: parseInt(process.env.DB_PORT || "5432"),
-  database: process.env.DB_NAME || "enterprise_hrms",
-  user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD || "password",
-  max: 20, // max connections in pool
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-  ssl: isProduction ? { rejectUnauthorized: false } : undefined,
-});
-
-export const query = async (text: string, params?: any[]) => {
-  const start = Date.now();
-  const res = await pool.query(text, params);
-  const duration = Date.now() - start;
-  // Audit log standard query durations in development if needed
-  return res;
+  try {
+    if (isWriteQuery) {
+      const rowCount = await prisma.$executeRawUnsafe(text, ...normalizedParams);
+      return { rows: [], rowCount };
+    } else {
+      const rows = await prisma.$queryRawUnsafe<any[]>(text, ...normalizedParams);
+      return { rows, rowCount: rows.length };
+    }
+  } catch (error) {
+    console.error(`Database query failed: ${text}`, error);
+    throw error;
+  }
 };
 
 export const getClient = async () => {
-  const client = await pool.connect();
-  return client;
+  return {
+    query,
+    release: () => {},
+  };
+};
+
+const pool = {
+  query,
+  connect: getClient,
+  end: async () => {
+    await prisma.$disconnect();
+  },
 };
 
 export default pool;

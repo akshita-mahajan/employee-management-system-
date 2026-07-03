@@ -10,22 +10,22 @@ const verifyDatabase = async () => {
     // 2. Users
     const usersRes = await pool.query("SELECT email, is_active FROM users");
     console.log(`- Users sample list:`);
-    usersRes.rows.forEach(u => console.log(`  * ${u.email} (Active: ${u.is_active})`));
+    usersRes.rows.forEach((u: any) => console.log(`  * ${u.email} (Active: ${u.is_active})`));
 
     // 3. Employees
     const empRes = await pool.query("SELECT first_name, last_name, employee_id, designation FROM employees");
     console.log(`- Employees sample list:`);
-    empRes.rows.forEach(e => console.log(`  * [${e.employee_id}] ${e.first_name} ${e.last_name} - ${e.designation}`));
+    empRes.rows.forEach((e: any) => console.log(`  * [${e.employee_id}] ${e.first_name} ${e.last_name} - ${e.designation}`));
 
     // 4. Departments
     const deptRes = await pool.query("SELECT name, code, budget FROM departments");
     console.log(`- Departments sample list:`);
-    deptRes.rows.forEach(d => console.log(`  * ${d.name} (${d.code}) - Budget: $${d.budget}`));
+    deptRes.rows.forEach((d: any) => console.log(`  * ${d.name} (${d.code}) - Budget: $${d.budget}`));
 
     // 5. Assets
     const assetRes = await pool.query("SELECT name, code, status, value FROM assets");
     console.log(`- Assets sample list:`);
-    assetRes.rows.forEach(a => console.log(`  * ${a.name} (${a.code}) - Status: ${a.status}, Value: $${a.value}`));
+    assetRes.rows.forEach((a: any) => console.log(`  * ${a.name} (${a.code}) - Status: ${a.status}, Value: $${a.value}`));
 
   } catch (error) {
     console.error("Verification query failed:", error);

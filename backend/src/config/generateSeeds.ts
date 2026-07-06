@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 
-// Generates seed.sql programmatically with 65 realistic employees
+// Generates seed.sql programmatically with 65 realistic employees and historical payroll logs
 const generateSeedFile = () => {
   const firstNames = [
     "John", "Jane", "Alice", "Bob", "Charlie", "David", "Emma", "Frank", "Grace", "Henry",
@@ -87,9 +87,9 @@ INSERT INTO leave_types (id, name, allowance_days) VALUES`);
 
 -- 4. SEED USERS & EMPLOYEES & ASSIGN ROLES`);
 
-  // Assign fixed accounts for keys
+  // Store metadata
+  const employeesList: { id: string; base: number; hra: number; lta: number }[] = [];
   const managers: string[] = []; // Store employee IDs of managers
-  const hrAdmins: string[] = [];
 
   // Generate 65 authenticated employees
   for (let i = 1; i <= 65; i++) {
@@ -105,29 +105,22 @@ INSERT INTO leave_types (id, name, allowance_days) VALUES`);
 
     // Determine Role and Department
     let assignedRoleId = roles.EMPLOYEE;
-    let assignedRoleName = "EMPLOYEE";
     let dept = departments[i % departments.length]; // Cycle departments
     let designation = "Software Engineer";
 
     if (i === 1) {
       assignedRoleId = roles.ADMIN;
-      assignedRoleName = "ADMIN";
       designation = "System Administrator";
       dept = departments[0]; // HR
     } else if (i === 2 || i === 3) {
       assignedRoleId = roles.HR;
-      assignedRoleName = "HR";
       designation = i === 2 ? "HR Director" : "Talent Acquisition Lead";
       dept = departments[0]; // HR
-      hrAdmins.push(empId);
     } else if (i >= 4 && i <= 8) {
-      // Setup 5 Managers
       assignedRoleId = roles.MANAGER;
-      assignedRoleName = "MANAGER";
       designation = `Lead ${dept.name} Manager`;
       managers.push(empId);
     } else {
-      // General employees
       if (dept.code === "ENG") {
         designation = i % 3 === 0 ? "Senior Software Engineer" : "Associate Developer";
       } else if (dept.code === "PM") {
@@ -159,14 +152,16 @@ INSERT INTO user_roles (user_id, role_id) VALUES
 INSERT INTO employees (id, user_id, employee_id, first_name, last_name, email, phone, department_id, designation, joining_date, status, reporting_manager_id) VALUES
 ('${empId}', '${userId}', '${formattedEmpCode}', '${firstName}', '${lastName}', '${email}', '${phone}', '${dept.id}', '${designation}', '2023-06-01', 'ACTIVE', ${reportingManagerId}) ON CONFLICT (id) DO NOTHING;`);
 
-    // Salary Structure
-    const baseSalary = 4000 + (i * 120);
+    // Salary Structure calculations
+    const baseSalary = 40000 + (i * 1200); // realistic Indian Rupee structure or consistent scales
     const hra = baseSalary * 0.4;
     const lta = baseSalary * 0.15;
     const salaryId = generateUUID(i, "b9a2a31c");
     output.push(`
 INSERT INTO salary_structures (id, employee_id, base_salary, hra, lta) VALUES
 ('${salaryId}', '${empId}', ${baseSalary.toFixed(2)}, ${hra.toFixed(2)}, ${lta.toFixed(2)}) ON CONFLICT (id) DO NOTHING;`);
+
+    employeesList.push({ id: empId, base: baseSalary, hra, lta });
 
     // Leave Balances
     leaveTypes.forEach((lt, j) => {
@@ -187,9 +182,59 @@ UPDATE departments SET manager_id = '${generateUUID(6, "e4a6a31c")}' WHERE id = 
 UPDATE departments SET manager_id = '${generateUUID(7, "e4a6a31c")}' WHERE id = '${departments[4].id}';
 `);
 
+  // Seeding Payroll Runs & Payslips (May 2026, June 2026, and Pending Draft July 2026)
+  const months = [
+    { name: "May 2026", dateStr: "2026-05-30 18:00:00+00", runId: "d9e8f7a6-b5c4-3d2e-1f0a-9b8c7d6e5f01", status: "PROCESSED" },
+    { name: "June 2026", dateStr: "2026-06-30 18:00:00+00", runId: "d9e8f7a6-b5c4-3d2e-1f0a-9b8c7d6e5f02", status: "PROCESSED" },
+    { name: "July 2026 (Draft)", dateStr: "2026-07-06 12:00:00+00", runId: "d9e8f7a6-b5c4-3d2e-1f0a-9b8c7d6e5f03", status: "PENDING" }
+  ];
+
+  output.push(`-- 5. SEED PAYROLL RUNS AND HISTORICAL PAYSLIPS`);
+
+  months.forEach((m) => {
+    // Process net payouts for PROCESSED runs
+    let totalPayout = 0;
+    if (m.status === "PROCESSED") {
+      employeesList.forEach((emp) => {
+        const gross = emp.base + emp.hra + emp.lta;
+        const pf = emp.base * 0.12;
+        const pt = 200.00;
+        const net = gross - (pf + pt);
+        totalPayout += net;
+      });
+    }
+
+    output.push(`
+INSERT INTO payroll_runs (id, billing_month, status, total_payout, created_at, updated_at) VALUES
+('${m.runId}', '${m.name}', '${m.status}', ${totalPayout.toFixed(2)}, '${m.dateStr}', '${m.dateStr}') ON CONFLICT (id) DO NOTHING;`);
+
+    // If PROCESSED, seed payslips and components for all 65 employees
+    if (m.status === "PROCESSED") {
+      employeesList.forEach((emp, index) => {
+        const payslipId = generateUUID(index + (m.name === "May 2026" ? 100 : 200), "d1a3a31c");
+        const gross = emp.base + emp.hra + emp.lta;
+        const pf = emp.base * 0.12;
+        const pt = 200.00;
+        const net = gross - (pf + pt);
+
+        output.push(`
+INSERT INTO payslips (id, payroll_run_id, employee_id, net_pay, created_at) VALUES
+('${payslipId}', '${m.runId}', '${emp.id}', ${net.toFixed(2)}, '${m.dateStr}') ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO payroll_components (payslip_id, name, type, amount) VALUES
+('${payslipId}', 'Basic Salary', 'EARNING', ${emp.base.toFixed(2)}),
+('${payslipId}', 'House Rent Allowance (HRA)', 'EARNING', ${emp.hra.toFixed(2)}),
+('${payslipId}', 'Leave Travel Allowance (LTA)', 'EARNING', ${emp.lta.toFixed(2)}),
+('${payslipId}', 'Provident Fund (PF)', 'DEDUCTION', ${pf.toFixed(2)}),
+('${payslipId}', 'Professional Tax', 'DEDUCTION', ${pt.toFixed(2)})
+ON CONFLICT (id) DO NOTHING;`);
+      });
+    }
+  });
+
   const destPath = path.join(__dirname, "../../database/seed.sql");
   fs.writeFileSync(destPath, output.join("\n"));
-  console.log(`Successfully generated seed SQL with 65 employees at: ${destPath}`);
+  console.log(`Successfully generated seed SQL with 65 employees and payroll at: ${destPath}`);
 };
 
 generateSeedFile();

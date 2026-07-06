@@ -695,10 +695,108 @@ router.post("/assets/:id/return", checkRole(["SUPER_ADMIN", "ADMIN"]), async (re
 // -------------------------------------------------------------
 router.get("/payroll/runs", checkRole(["SUPER_ADMIN", "ADMIN", "PAYROLL_ADMIN", "AUDITOR"]), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const result = await pool.query("SELECT * FROM payroll_runs WHERE deleted_at IS NULL ORDER BY created_at DESC");
+    const result = await pool.query(
+      `SELECT pr.*, 
+              (SELECT COUNT(*)::integer FROM payslips WHERE payroll_run_id = pr.id) as employee_count
+       FROM payroll_runs pr 
+       WHERE pr.deleted_at IS NULL 
+       ORDER BY pr.created_at DESC`
+    );
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ message: "Error loading payroll runs" });
+  }
+});
+
+router.post("/payroll/runs", checkRole(["SUPER_ADMIN", "ADMIN", "PAYROLL_ADMIN"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
+  const { billingMonth } = req.body;
+  if (!billingMonth) {
+    return res.status(400).json({ message: "Billing month name is required" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Check if payroll run already exists for this month
+    const existing = await client.query("SELECT 1 FROM payroll_runs WHERE billing_month = $1 AND deleted_at IS NULL", [billingMonth]);
+    if (existing.rows.length > 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: `Payroll has already been processed for ${billingMonth}` });
+    }
+
+    // Fetch active employees with their salary structures
+    const employeesRes = await client.query(
+      `SELECT e.id, ss.base_salary, ss.hra, ss.lta 
+       FROM employees e
+       JOIN salary_structures ss ON e.id = ss.employee_id
+       WHERE e.status = 'ACTIVE' AND e.deleted_at IS NULL AND ss.deleted_at IS NULL`
+    );
+
+    if (employeesRes.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "No active employees with configured salary structures found." });
+    }
+
+    // Insert new payroll run
+    const payrollRunRes = await client.query(
+      `INSERT INTO payroll_runs (billing_month, status, total_payout) 
+       VALUES ($1, 'PROCESSED', 0.00) RETURNING *`,
+      [billingMonth]
+    );
+    const newRun = payrollRunRes.rows[0];
+
+    let totalPayout = 0;
+
+    for (const emp of employeesRes.rows) {
+      const base = parseFloat(emp.base_salary);
+      const hra = parseFloat(emp.hra);
+      const lta = parseFloat(emp.lta);
+      
+      const earnings = base + hra + lta;
+      const pf = base * 0.12;
+      const pt = 200.00;
+      const netPay = earnings - (pf + pt);
+      totalPayout += netPay;
+
+      // Insert payslip
+      const payslipRes = await client.query(
+        `INSERT INTO payslips (payroll_run_id, employee_id, net_pay) 
+         VALUES ($1, $2, $3) RETURNING id`,
+        [newRun.id, emp.id, netPay]
+      );
+      const payslipId = payslipRes.rows[0].id;
+
+      // Insert payroll components
+      await client.query(
+        `INSERT INTO payroll_components (payslip_id, name, type, amount) VALUES 
+         ($1, 'Basic Salary', 'EARNING', $2),
+         ($1, 'House Rent Allowance (HRA)', 'EARNING', $3),
+         ($1, 'Leave Travel Allowance (LTA)', 'EARNING', $4),
+         ($1, 'Provident Fund (PF)', 'DEDUCTION', $5),
+         ($1, 'Professional Tax', 'DEDUCTION', $6)`,
+        [payslipId, base, hra, lta, pf, pt]
+      );
+    }
+
+    // Update total payout
+    await client.query(
+      "UPDATE payroll_runs SET total_payout = $1 WHERE id = $2",
+      [totalPayout, newRun.id]
+    );
+
+    newRun.total_payout = totalPayout;
+
+    await client.query("COMMIT");
+    await logAudit(req.user?.id || null, "INSERT", "PayrollRun", null, newRun);
+
+    res.status(201).json(newRun);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Run payroll failed:", error);
+    res.status(500).json({ message: "Error running payroll cycle" });
+  } finally {
+    client.release();
   }
 });
 
@@ -763,27 +861,89 @@ router.get("/audit-logs", checkRole(["SUPER_ADMIN", "ADMIN", "AUDITOR"]), async 
 // 9. DASHBOARD BUSINESS INTELLIGENCE ANALYTICS
 // -------------------------------------------------------------
 router.get("/dashboard/analytics", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN", "HR", "PAYROLL_ADMIN", "MANAGER", "TEAM_LEAD", "AUDITOR"]), async (req: AuthenticatedRequest, res: Response): Promise<any> => {
+  const { departmentId, year, quarter } = req.query;
+
   try {
-    const activeEmpRes = await pool.query("SELECT COUNT(*) as count FROM employees WHERE deleted_at IS NULL");
-    const prevEmpRes = await pool.query("SELECT COUNT(*) as count FROM employees WHERE deleted_at IS NULL AND created_at < DATE_TRUNC('month', CURRENT_DATE)");
+    const deptId = departmentId || null;
+
+    // Helper for department filtering
+    const deptFilter = deptId ? "AND department_id = $1" : "";
+    const deptFilterEmp = deptId ? "AND e.department_id = $1" : "";
+    const params = deptId ? [deptId] : [];
+
+    const activeEmpRes = await pool.query(
+      `SELECT COUNT(*) as count FROM employees WHERE deleted_at IS NULL ${deptFilter}`,
+      params
+    );
+    const prevEmpRes = await pool.query(
+      `SELECT COUNT(*) as count FROM employees WHERE deleted_at IS NULL AND created_at < DATE_TRUNC('month', CURRENT_DATE) ${deptFilter}`,
+      params
+    );
     
     const activeCount = parseInt(activeEmpRes.rows[0].count);
     const prevCount = parseInt(prevEmpRes.rows[0].count);
     const employeeGrowth = prevCount > 0 ? parseFloat(((activeCount - prevCount) * 100.0 / prevCount).toFixed(1)) : 0;
 
-    const payrollRes = await pool.query("SELECT COALESCE(SUM(net_pay), 0) as paid FROM payslips WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE) AND deleted_at IS NULL");
-    const prevPayrollRes = await pool.query("SELECT COALESCE(SUM(net_pay), 0) as paid FROM payslips WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND created_at < DATE_TRUNC('month', CURRENT_DATE) AND deleted_at IS NULL");
+    const payrollRes = await pool.query(
+      `SELECT COALESCE(SUM(p.net_pay), 0) as paid 
+       FROM payslips p 
+       JOIN employees e ON p.employee_id = e.id
+       WHERE p.created_at >= DATE_TRUNC('month', CURRENT_DATE) AND p.deleted_at IS NULL ${deptFilterEmp}`,
+      params
+    );
+    const prevPayrollRes = await pool.query(
+      `SELECT COALESCE(SUM(p.net_pay), 0) as paid 
+       FROM payslips p
+       JOIN employees e ON p.employee_id = e.id
+       WHERE p.created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') 
+         AND p.created_at < DATE_TRUNC('month', CURRENT_DATE) 
+         AND p.deleted_at IS NULL ${deptFilterEmp}`,
+      params
+    );
     
     const paidPayroll = parseFloat(payrollRes.rows[0].paid);
     const prevPayroll = parseFloat(prevPayrollRes.rows[0].paid);
     const payrollVariance = prevPayroll > 0 ? parseFloat(((paidPayroll - prevPayroll) * 100.0 / prevPayroll).toFixed(1)) : 0;
 
-    const attRes = await pool.query("SELECT COALESCE(ROUND((COUNT(CASE WHEN status = 'PRESENT' THEN 1 END) * 100.0) / NULLIF(COUNT(*), 0), 1), 0.0) as rate FROM attendance WHERE date >= DATE_TRUNC('month', CURRENT_DATE) AND deleted_at IS NULL");
-    const prevAttRes = await pool.query("SELECT COALESCE(ROUND((COUNT(CASE WHEN status = 'PRESENT' THEN 1 END) * 100.0) / NULLIF(COUNT(*), 0), 1), 0.0) as rate FROM attendance WHERE date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND date < DATE_TRUNC('month', CURRENT_DATE) AND deleted_at IS NULL");
+    const attRes = await pool.query(
+      `SELECT COALESCE(ROUND((COUNT(CASE WHEN a.status = 'PRESENT' THEN 1 END) * 100.0) / NULLIF(COUNT(*), 0), 1), 0.0) as rate 
+       FROM attendance a
+       JOIN employees e ON a.employee_id = e.id
+       WHERE a.date >= DATE_TRUNC('month', CURRENT_DATE) AND a.deleted_at IS NULL ${deptFilterEmp}`,
+      params
+    );
+    const prevAttRes = await pool.query(
+      `SELECT COALESCE(ROUND((COUNT(CASE WHEN a.status = 'PRESENT' THEN 1 END) * 100.0) / NULLIF(COUNT(*), 0), 1), 0.0) as rate 
+       FROM attendance a
+       JOIN employees e ON a.employee_id = e.id
+       WHERE a.date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') 
+         AND a.date < DATE_TRUNC('month', CURRENT_DATE) 
+         AND a.deleted_at IS NULL ${deptFilterEmp}`,
+      params
+    );
     
     const attRate = parseFloat(attRes.rows[0].rate);
     const prevAttRate = parseFloat(prevAttRes.rows[0].rate);
     const attGrowth = parseFloat((attRate - prevAttRate).toFixed(1));
+
+    // Handle year/quarter logic for trend series
+    const selectedYr = year ? parseInt(year as string) : new Date().getFullYear();
+    let startDateStr = `${selectedYr}-01-01`;
+    let endDateStr = `${selectedYr}-12-31`;
+
+    if (quarter === "Q1") {
+      startDateStr = `${selectedYr}-01-01`;
+      endDateStr = `${selectedYr}-03-31`;
+    } else if (quarter === "Q2") {
+      startDateStr = `${selectedYr}-04-01`;
+      endDateStr = `${selectedYr}-06-30`;
+    } else if (quarter === "Q3") {
+      startDateStr = `${selectedYr}-07-01`;
+      endDateStr = `${selectedYr}-09-30`;
+    } else if (quarter === "Q4") {
+      startDateStr = `${selectedYr}-10-01`;
+      endDateStr = `${selectedYr}-12-31`;
+    }
 
     const trendRes = await pool.query(
       `SELECT 
@@ -791,21 +951,24 @@ router.get("/dashboard/analytics", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN"
          COALESCE(
            (SELECT SUM(p.net_pay) 
             FROM payslips p 
-            WHERE DATE_TRUNC('month', p.created_at) = DATE_TRUNC('month', date_series) AND p.deleted_at IS NULL), 
+            JOIN employees e ON p.employee_id = e.id
+            WHERE DATE_TRUNC('month', p.created_at) = DATE_TRUNC('month', date_series) 
+              AND p.deleted_at IS NULL ${deptFilterEmp}), 
            0
          )::double precision as actual_paid,
          COALESCE(
            (SELECT SUM(d.budget) 
             FROM departments d 
-            WHERE d.deleted_at IS NULL),
+            WHERE d.deleted_at IS NULL ${deptId ? "AND d.id = $1" : ""}),
            0
          )::double precision as total_budget
        FROM GENERATE_SERIES(
-         CURRENT_DATE - INTERVAL '5 months',
-         CURRENT_DATE,
+         $${params.length + 1}::timestamp,
+         $${params.length + 2}::timestamp,
          '1 month'::interval
        ) date_series
-       ORDER BY date_series ASC`
+       ORDER BY date_series ASC`,
+      [...params, startDateStr, endDateStr]
     );
 
     const deptDistRes = await pool.query(
@@ -839,23 +1002,28 @@ router.get("/dashboard/analytics", checkRole(["SUPER_ADMIN", "ADMIN", "HR_ADMIN"
          COUNT(CASE WHEN base_salary >= 30000 AND base_salary < 70000 THEN 1 END)::integer as bracket_mid,
          COUNT(CASE WHEN base_salary >= 70000 AND base_salary < 150000 THEN 1 END)::integer as bracket_high,
          COUNT(CASE WHEN base_salary >= 150000 THEN 1 END)::integer as bracket_exec
-       FROM salary_structures
-       WHERE deleted_at IS NULL`
+       FROM salary_structures ss
+       JOIN employees e ON ss.employee_id = e.id
+       WHERE ss.deleted_at IS NULL ${deptFilterEmp}`,
+      params
     );
 
     const growthRes = await pool.query(
       `SELECT 
          TO_CHAR(date_series, 'Mon YYYY') as month,
          COALESCE(
-           (SELECT COUNT(*) FROM employees WHERE DATE_TRUNC('month', joining_date) = DATE_TRUNC('month', date_series) AND deleted_at IS NULL),
+           (SELECT COUNT(*) FROM employees e 
+            WHERE DATE_TRUNC('month', e.joining_date) = DATE_TRUNC('month', date_series) 
+              AND e.deleted_at IS NULL ${deptFilterEmp}),
            0
          )::integer as new_hires
        FROM GENERATE_SERIES(
-         CURRENT_DATE - INTERVAL '11 months',
-         CURRENT_DATE,
+         $${params.length + 1}::timestamp,
+         $${params.length + 2}::timestamp,
          '1 month'::interval
        ) date_series
-       ORDER BY date_series ASC`
+       ORDER BY date_series ASC`,
+      [...params, startDateStr, endDateStr]
     );
 
     res.json({

@@ -372,6 +372,21 @@ export const usePayslips = () => {
   });
 };
 
+export const useRunPayroll = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { billingMonth: string }) => {
+      const response = await api.post("/payroll/runs", payload);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.payrollRuns });
+      queryClient.invalidateQueries({ queryKey: queryKeys.payslips });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-analytics"] });
+    },
+  });
+};
+
 // 8. NOTIFICATIONS HOOKS
 export const useNotifications = () => {
   return useQuery({

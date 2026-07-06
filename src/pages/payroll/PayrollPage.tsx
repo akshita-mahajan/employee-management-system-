@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Tabs, Row, Col, Space, Button, notification } from "antd";
+import { Tabs, Row, Col, Space, Button, notification, Spin } from "antd";
 import { PlayCircleOutlined } from "@ant-design/icons";
 
 import { PayrollStats } from "../../components/payroll/PayrollStats";
@@ -7,27 +7,39 @@ import { PayslipViewer } from "../../components/payroll/PayslipViewer";
 import { SalaryBreakdown } from "../../components/payroll/SalaryBreakdown";
 import { PayrollTable } from "../../components/payroll/PayrollTable";
 import type { PayrollRecord } from "../../components/payroll/PayrollTable";
-
-const mockPayrollHistory: PayrollRecord[] = [
-  { id: "1", month: "May 2026", totalPayout: "₹42,50,000", status: "PROCESSED", employeeCount: 1248 },
-  { id: "2", month: "April 2026", totalPayout: "₹42,45,000", status: "PROCESSED", employeeCount: 1245 },
-  { id: "3", month: "March 2026", totalPayout: "₹41,80,000", status: "PROCESSED", employeeCount: 1240 },
-  { id: "4", month: "June 2026 (Draft)", totalPayout: "₹42,68,000", status: "PENDING", employeeCount: 1252 },
-];
+import { usePayrollRuns, useRunPayroll } from "../../hooks/useHRMS";
 
 const PayrollPage: React.FC = () => {
-  const [records, setRecords] = useState<PayrollRecord[]>(mockPayrollHistory);
+  const { data: rawRuns = [], isLoading } = usePayrollRuns();
+  const runPayrollMutation = useRunPayroll();
+
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedPayslip, setSelectedPayslip] = useState<any>(null);
 
-  const handleRunPayroll = () => {
-    // Check if draft June payroll is pending and process it
-    const updated = records.map((r) => (r.status === "PENDING" ? { ...r, status: "PROCESSED" } : r));
-    setRecords(updated);
-    notification.success({
-      message: "Payroll Run Dispatched",
-      description: "Draft monthly payroll processed and payslips dispatched to employees.",
-    });
+  // Map backend runs to Table layout format
+  const records: PayrollRecord[] = rawRuns.map((r: any) => ({
+    id: r.id,
+    month: r.billing_month,
+    totalPayout: `₹${(parseFloat(r.total_payout) || 0).toLocaleString("en-IN")}`,
+    status: r.status,
+    employeeCount: r.employee_count || 65,
+  }));
+
+  const handleRunPayroll = async () => {
+    try {
+      await runPayrollMutation.mutateAsync({
+        billingMonth: "July 2026",
+      });
+      notification.success({
+        message: "Payroll Run Dispatched",
+        description: "Draft monthly payroll processed and payslips dispatched to employees.",
+      });
+    } catch (error: any) {
+      notification.error({
+        message: "Run Payroll Failed",
+        description: error.response?.data?.message || "Error starting payroll transaction in database.",
+      });
+    }
   };
 
   const handleOpenViewer = (record: PayrollRecord) => {
@@ -55,7 +67,7 @@ const PayrollPage: React.FC = () => {
     {
       key: "history",
       label: "Payroll Payout Cycles",
-      children: <PayrollTable records={records} onViewPayslip={handleOpenViewer} />,
+      children: isLoading ? <Spin style={{ display: "block", margin: "40px auto" }} /> : <PayrollTable records={records} onViewPayslip={handleOpenViewer} />,
     },
     {
       key: "breakdown",
@@ -63,6 +75,13 @@ const PayrollPage: React.FC = () => {
       children: <SalaryBreakdown />,
     },
   ];
+
+  // Calculate cumulative stats from live records
+  const totalPayrollValue = rawRuns
+    .filter((r: any) => r.status === "PROCESSED")
+    .reduce((sum: number, r: any) => sum + (parseFloat(r.total_payout) || 0), 0);
+
+  const formattedTotalPayout = `₹${totalPayrollValue.toLocaleString("en-IN")}`;
 
   return (
     <div style={{ maxWidth: "1600px", margin: "0 auto" }}>
@@ -81,6 +100,7 @@ const PayrollPage: React.FC = () => {
               type="primary"
               icon={<PlayCircleOutlined />}
               onClick={handleRunPayroll}
+              loading={runPayrollMutation.isPending}
               style={{ backgroundColor: "#0061FF", borderRadius: "6px", height: "40px" }}
             >
               Run Payroll Cycle
@@ -91,7 +111,7 @@ const PayrollPage: React.FC = () => {
 
       {/* KPI Section */}
       <PayrollStats
-        totalPayout="₹42,50,000"
+        totalPayout={formattedTotalPayout}
         avgCTC="₹11,64,000 / yr"
         totalDeductions="₹4,55,000"
       />
